@@ -1050,7 +1050,7 @@ class BnicNancy:
 
     def delete_object(self, point, button):
         #self.dlgModif.reject() #ferme la fenetre
-        self.save_layers
+        self.save_layers()
 
         self.select_nearest_feature(point, button)
 
@@ -1074,7 +1074,7 @@ class BnicNancy:
         self.canvas.setCursor(QCursor(Qt.PointingHandCursor))
 
     def modify_attribute(self,point, button ):
-        self.save_layers
+        self.save_layers()
 
         self.select_nearest_feature(point, button)
 
