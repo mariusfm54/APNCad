@@ -162,6 +162,32 @@
     <string>Liste des Points</string>
    </property>
   </widget>
+  <widget class="QPushButton" name="pushButton_clavierNum">
+   <property name="geometry">
+    <rect>
+     <x>350</x>
+     <y>10</y>
+     <width>101</width>
+     <height>20</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Clavier Num</string>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="pushButton_clavierInc">
+   <property name="geometry">
+    <rect>
+     <x>350</x>
+     <y>40</y>
+     <width>101</width>
+     <height>20</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Clavier Num</string>
+   </property>
+  </widget>
  </widget>
  <customwidgets>
   <customwidget>

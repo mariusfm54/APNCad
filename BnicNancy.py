@@ -21,15 +21,15 @@
  *                                                                         *
  ***************************************************************************/
 """
-from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QFileInfo, QObject, Qt
+from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QFileInfo, QObject, Qt, QVariant
 from qgis.PyQt.QtGui import QIcon, QCursor
-from qgis.PyQt.QtWidgets import QAction, QMessageBox
+from qgis.PyQt.QtWidgets import QAction, QMessageBox, QDockWidget
 from qgis.utils import iface
 from qgis.gui import QgsMapToolEmitPoint, QgsMapToolPan
 from .SnappingMapTool import SnappingMapToolEmitPoint
 
 import requests
-from PyQt5.QtWidgets import QAction, QMessageBox, QApplication, QToolButton, QMenu, QLineEdit, QPushButton
+from PyQt5.QtWidgets import QAction, QMessageBox, QApplication, QToolButton, QMenu, QLineEdit, QPushButton, QComboBox
 from qgis.core import (QgsCoordinateReferenceSystem,
                        QgsCoordinateTransform,
                        QgsProject,
@@ -42,16 +42,22 @@ from qgis.core import (QgsCoordinateReferenceSystem,
                        QgsMapLayerType,
                        QgsPoint,
                        QgsMapLayer,
-                       QgsCircularString)
+                       QgsCircularString,
+                       QgsLayerDefinition,
+                       QgsWkbTypes,
+                       QgsFields,
+                       QgsField,
+                       QgsVectorFileWriter)
 
 # Initialize Qt resources from file resources.py
 from .resources import *
 # Import the code for the dialog
 from .BnicNancy_dialog import BnicNancyDialog
-from .ModifPoint_dialog import ModifPointDialog
 from .ListePoint_dialog import ListePointDialog
 from .EntrerAttribut_dialog import EntrerAttributDialog
 from .ChoisirDebord_dialog import ChoisirDebordDialog
+from .ClavierNum_dialog import ClavierNumDialog
+from .Crs_dialog import CrsDialog
 
 import os.path
 import sys
@@ -88,7 +94,17 @@ class BnicNancy:
 
         # Declare instance attributes
         self.actions = []
-        self.menu = self.tr(u'&BnicNancy')
+        # self.menu = self.tr(u'&BnicNancy')
+        self.menu = QMenu(self.iface.mainWindow())
+        self.menu.setObjectName("bnMenu")
+        self.menu.setTitle("BnicNancy")
+        self.iface.mainWindow().menuBar().insertMenu(self.iface.firstRightStandardMenu().menuAction(),self.menu)
+
+        #menu SCR
+        self.menu_scr = QMenu(self.iface.mainWindow())
+        self.menu_scr.setObjectName("bnSCRMenu")
+        self.menu_scr.setTitle("SCR")
+        self.iface.mainWindow().menuBar().insertMenu(self.iface.firstRightStandardMenu().menuAction(),self.menu_scr)
 
         # Check if plugin was started the first time in current QGIS session
         # Must be set in initGui() to survive plugin reloads
@@ -96,20 +112,24 @@ class BnicNancy:
         self.demarrage=True
 
         #Toolbar general
-        self.toolbar = self.iface.addToolBar("BnicNancy_General")
+        self.toolbar = self.iface.addToolBar("BnicNancy Général")
+        self.toolbar.setObjectName("bnGeneralToolBar")
 
         #Toolbar point
-        self.pointToolbar = self.iface.addToolBar("BnicNancy_Point")
+        self.pointToolbar = self.iface.addToolBar("BnicNancy Point")
+        self.pointToolbar.setObjectName("bnPointToolBar")
 
         #Toolbar autres outils
-        self.dessinToolbar = self.iface.addToolBar("BnicNancy_Dessin")
+        self.dessinToolbar = self.iface.addToolBar("BnicNancy Dessin")
+        self.dessinToolbar.setObjectName("bnDessinToolBar")
 
         #Toolbar symbole
-        self.symboleToolbar = self.iface.addToolBar("Bnicnancy_Symbole")
+        self.symboleToolbar = self.iface.addToolBar("BnicNancy Symbole")
+        self.symboleToolbar.setObjectName("bnSymboleToolBar")
 
         #Toolbar entree et zoom
-        self.enterToolbar = self.iface.addToolBar("BnicNancy_Entree_Zoom")
-
+        self.enterToolbar = self.iface.addToolBar("BnicNancy Entrée & Zoom")
+        self.dessinToolbar.setObjectName("bnEntreeToolBar")
 
 
         #Widget bouton start
@@ -121,6 +141,18 @@ class BnicNancy:
         self.rightClicWidget.setToolTip(self.tr('Start'))
         self.startButt.clicked.connect(self.start_function)
 
+        #Bouton deroulant couche
+        self.coucheButton = QToolButton()
+        self.coucheButton.setMenu(QMenu())
+        self.coucheButton.setPopupMode(QToolButton.MenuButtonPopup)
+        self.coucheButtonAction = self.toolbar.addWidget(self.coucheButton)
+
+        #Bouton deroulant translation
+        self.translationButton = QToolButton()
+        self.translationButton.setMenu(QMenu())
+        self.translationButton.setPopupMode(QToolButton.MenuButtonPopup)
+        self.translationButtonAction = self.toolbar.addWidget(self.translationButton)
+
         #Widget toolbar texte dernier point
         self.lastPoint = QLineEdit(self.iface.mainWindow())
         self.lastPoint.setFixedWidth(80)
@@ -129,10 +161,10 @@ class BnicNancy:
         self.lastPointWidget.setToolTip(self.tr('Numéro point'))
 
         #Bouton deroulant point
-        self.toolButton = QToolButton()
-        self.toolButton.setMenu(QMenu())
-        self.toolButton.setPopupMode(QToolButton.MenuButtonPopup)
-        self.toolBtnAction = self.pointToolbar.addWidget(self.toolButton)
+        self.pointButton = QToolButton()
+        self.pointButton.setMenu(QMenu())
+        self.pointButton.setPopupMode(QToolButton.MenuButtonPopup)
+        self.toolBtnAction = self.pointToolbar.addWidget(self.pointButton)
 
         #Bouton deroulant cote
         self.coteButton = QToolButton()
@@ -233,11 +265,78 @@ class BnicNancy:
         #Parametres polyligne
         #attribut sur le segment
         self.attribut = True
-        #liste contenant coord points pour polyligne
-        self.polyList=[]
+
+
+        #liste contenant coord points pour polyligne, translation
+        self.pointList=[]
+
+        #Variable bool copy lors de translation
+        self.copy = True
+
+
+        #clavier num
+        self.dlgClavierNum = ClavierNumDialog()
+        self.dlgClavierNum.setFixedSize(377, 324)
+        self.dlgClavierNum.pushButton_0.clicked.connect(self.key_0)
+        self.dlgClavierNum.pushButton_1.clicked.connect(self.key_1)
+        self.dlgClavierNum.pushButton_2.clicked.connect(self.key_2)
+        self.dlgClavierNum.pushButton_3.clicked.connect(self.key_3)
+        self.dlgClavierNum.pushButton_4.clicked.connect(self.key_4)
+        self.dlgClavierNum.pushButton_5.clicked.connect(self.key_5)
+        self.dlgClavierNum.pushButton_6.clicked.connect(self.key_6)
+        self.dlgClavierNum.pushButton_7.clicked.connect(self.key_7)
+        self.dlgClavierNum.pushButton_8.clicked.connect(self.key_8)
+        self.dlgClavierNum.pushButton_9.clicked.connect(self.key_9)
+        self.dlgClavierNum.pushButton_coma.clicked.connect(self.key_coma)
+        self.dlgClavierNum.pushButton_del.clicked.connect(self.key_del)
+
 
         #parametre debordT
         self.debord="0"
+        #fenetre debord
+        self.dlgDebord = ChoisirDebordDialog()
+        self.dlgDebord.setFixedSize(854, 155)
+        self.dlgDebord.pushButton_0.clicked.connect(self.set_debord0)
+        self.dlgDebord.pushButton_10.clicked.connect(self.set_debord10)
+        self.dlgDebord.pushButton_20.clicked.connect(self.set_debord20)
+        self.dlgDebord.pushButton_30.clicked.connect(self.set_debord30)
+        self.dlgDebord.pushButton_40.clicked.connect(self.set_debord40)
+        self.dlgDebord.pushButton_50.clicked.connect(self.set_debord50)
+        self.dlgDebord.pushButton_60.clicked.connect(self.set_debord60)
+        self.dlgDebord.pushButton_70.clicked.connect(self.set_debord70)
+        self.dlgDebord.pushButton_80.clicked.connect(self.set_debord80)
+        self.dlgDebord.pushButton_90.clicked.connect(self.set_debord90)
+
+        self.dlgDebord.pushButton_clavier.clicked.connect(self.make_clavier_num(self.dlgDebord.lineedit_debord))
+
+        #Fenetre entrer attribut (cote, modifier)
+        self.dlgAttribut = EntrerAttributDialog()
+        self.dlgAttribut.setFixedSize(425, 109)
+        self.dlgAttribut.pushButton_clavier.clicked.connect(self.make_clavier_num(self.dlgAttribut.lineedit_attribut))
+
+        #Fenetre parametres point
+        self.dlg = BnicNancyDialog()
+        #empeche redimensionnement fenetre
+        self.dlg.setFixedSize(477, 161)
+        self.dlg.pushButton_clavierNum.clicked.connect(self.make_clavier_num(self.dlg.lineedit_numin))
+        self.dlg.pushButton_clavierInc.clicked.connect(self.make_clavier_num(self.dlg.lineedit_inc))
+        self.dlg.button_listePoint.clicked.connect(self.afficher_liste_point)
+
+        #Fenetre liste points
+        self.dlgListe = ListePointDialog()
+        self.dlgListe.setFixedSize(275, 439)
+
+
+        #Fenetre choix SCR
+        self.dlgCrs = CrsDialog()
+        self.dlgCrs.setFixedSize(453, 156)
+        self.dlgCrs.comboBox_crs.addItems(['RGF93 / CC48\tESPG:3948','RGF93 / CC49\tESPG:3949','RGF93 / CC50\tESPG:3950'])
+        self.dlgCrs.pushButton_saveAs.clicked.connect(self.save_project)
+
+        #Liste des couches et de leur type
+        self.listLayers = [("debordT","Point"),("borne","Point"),("cloture","Point"),("murmitoyen","Ligne"),("murnonmi","Ligne"),("borne_retrouvee","Point"),   ("biffer","Ligne"),("MurDroite","Ligne"),("Point","Point"),("Texte","Point"),("TexteOriente","Ligne"),("MurMilieu","Ligne"),("coteSURLigne","Ligne"),("LigneDiscontinue","Ligne"),("LigneContinue","Ligne"),("cotesansligne","Ligne"),("polygone","Polygone"),("image","Point")]
+
+
 
         #Outils
         #Tracer point
@@ -261,6 +360,15 @@ class BnicNancy:
 
         #tracer debord
         self.debordTool = SnappingMapToolEmitPoint(self.canvas)
+
+        #identifier couche
+        self.identifyTool = QgsMapToolEmitPoint(self.canvas)
+
+        #translater feature
+        self.translateTool = QgsMapToolEmitPoint(self.canvas)
+
+        #copier et translater feature
+        self.copyTool = QgsMapToolEmitPoint(self.canvas)
 
 
 
@@ -286,10 +394,11 @@ class BnicNancy:
         icon_path,
         text,
         callback,
-        toolbar,
-        enabled_flag=True,
-        add_to_menu=True,
-        add_to_toolbar=False,   #Bouton deroulant: on ajoute les 2 actions dans initGui
+        toolbar=None,
+        menu=None,
+        enabled_flag=False,
+        add_to_menu=False,
+        add_to_toolbar=False,
         status_tip=None,
         whats_this=None,
         parent=None):
@@ -348,9 +457,11 @@ class BnicNancy:
             toolbar.addAction(action)
 
         if add_to_menu:
-            self.iface.addPluginToMenu(
-                self.menu,
-                action)
+            # self.iface.addPluginToMenu(
+            #     menu,
+            #     action)
+            self.iface.mainWindow().menuBar().insertMenu(self.iface.firstRightStandardMenu().menuAction(),menu)
+            menu.addAction(action)
 
         self.actions.append(action)
 
@@ -360,13 +471,11 @@ class BnicNancy:
         """Create the menu entries and toolbar icons inside the QGIS GUI."""
 
         #tracer point
-        icon_path = ':/plugins/BnicNancy/icon.png'
+        icon_path = ':/plugins/BnicNancy/icon.png' #nom tel que defini dans le fichier qrc
         self.add_action(
             icon_path,
             text=self.tr(u'Tracer Point'),
             callback=self.set_point_tool,
-            toolbar=self.pointToolbar, #inutile ici
-            enabled_flag=False,
             parent=self.iface.mainWindow())
 
         self.id_tracer_point=len(self.actions)-1
@@ -377,18 +486,15 @@ class BnicNancy:
             icon_path2,
             text=self.tr(u'Configurer points'),
             callback=self.run,
-            toolbar=self.pointToolbar, #inutile ici
-            enabled_flag=False,
             parent=self.iface.mainWindow())
 
         self.id_config_point=len(self.actions)-1
 
         #Bouton deroulant point
-        m = self.toolButton.menu()
-        m.addAction(self.actions[self.id_tracer_point])
-
-        self.toolButton.setDefaultAction(self.actions[self.id_tracer_point])   #action par default du bouton
-        m.addAction(self.actions[self.id_config_point])
+        boutonMenuPoint = self.pointButton.menu()
+        boutonMenuPoint.addAction(self.actions[self.id_tracer_point])
+        self.pointButton.setDefaultAction(self.actions[self.id_tracer_point])   #action par default du bouton
+        boutonMenuPoint.addAction(self.actions[self.id_config_point])
 
 
         #Bouton delete object
@@ -398,7 +504,6 @@ class BnicNancy:
             text=self.tr('Supprimer des entités'),
             callback=self.set_delete_tool,
             toolbar=self.toolbar,
-            enabled_flag=False,
             add_to_toolbar=True,
             parent=self.iface.mainWindow())
 
@@ -409,7 +514,6 @@ class BnicNancy:
             text=self.tr("Modifier l'attribut d'une entité"),
             callback=self.set_modif_tool,
             toolbar=self.toolbar,
-            enabled_flag=False,
             add_to_toolbar=True,
             parent=self.iface.mainWindow())
 
@@ -421,7 +525,6 @@ class BnicNancy:
             text=self.tr('Sauvegarde les couches en mode édition'),
             callback=self.save_layers,
             toolbar=self.toolbar,
-            enabled_flag=False,
             add_to_toolbar=True,
             parent=self.iface.mainWindow())
 
@@ -433,11 +536,10 @@ class BnicNancy:
             text=self.tr('Annuler'),
             callback=self.cancel,
             toolbar=self.pointToolbar,
-            enabled_flag=False,
             add_to_toolbar=True,
             parent=self.iface.mainWindow())
 
-        self.cancel_id=len(self.actions)-1
+        self.id_cancel=len(self.actions)-1
 
         #bouton coteSurLigne
         icon_path7=':/plugins/BnicNancy/icon12.png'
@@ -445,8 +547,6 @@ class BnicNancy:
             icon_path7,
             text=self.tr('Tracer une cote sur ligne'),
             callback=self.set_coteSurLigne_tool,
-            toolbar=self.dessinToolbar, #inutile ici
-            enabled_flag=False,
             parent=self.iface.mainWindow())
 
         self.id_coteSurLigne=len(self.actions)-1
@@ -457,8 +557,6 @@ class BnicNancy:
             icon_path8,
             text=self.tr('Tracer une cote sans ligne'),
             callback=self.set_coteSansLigne_tool,
-            toolbar=self.dessinToolbar, #inutile ici
-            enabled_flag=False,
             parent=self.iface.mainWindow())
 
         self.id_coteSansLigne=len(self.actions)-1
@@ -469,8 +567,6 @@ class BnicNancy:
             icon_path9,
             text=self.tr('Tracer une cote courbe'),
             callback=self.set_coteCourbe_tool,
-            toolbar=self.dessinToolbar, #inutile ici
-            enabled_flag=False,
             parent=self.iface.mainWindow())
 
         self.id_coteCourbe=len(self.actions)-1
@@ -489,8 +585,6 @@ class BnicNancy:
             icon_path10,
             text=self.tr('Tracer une ligne continue'),
             callback=self.set_ligneContinue_tool,
-            toolbar=self.dessinToolbar, #inutile ici
-            enabled_flag=False,
             parent=self.iface.mainWindow())
 
         self.id_ligneContinue=len(self.actions)-1
@@ -501,8 +595,6 @@ class BnicNancy:
             icon_path11,
             text=self.tr('Tracer une ligne discontinue'),
             callback=self.set_ligneDiscontinue_tool,
-            toolbar=self.dessinToolbar, #inutile ici
-            enabled_flag=False,
             parent=self.iface.mainWindow())
 
         self.id_ligneDiscontinue=len(self.actions)-1
@@ -520,8 +612,6 @@ class BnicNancy:
             icon_path12,
             text=self.tr('Tracer un mur à droite'),
             callback=self.set_murDroite_tool,
-            toolbar=self.dessinToolbar, #inutile ici
-            enabled_flag=False,
             parent=self.iface.mainWindow())
 
         self.id_murDroite=len(self.actions)-1
@@ -532,8 +622,6 @@ class BnicNancy:
             icon_path13,
             text=self.tr('Tracer un mur au milieu'),
             callback=self.set_murMilieu_tool,
-            toolbar=self.dessinToolbar, #inutile ici
-            enabled_flag=False,
             parent=self.iface.mainWindow())
 
         self.id_murMilieu=len(self.actions)-1
@@ -550,8 +638,6 @@ class BnicNancy:
             icon_path14,
             text=self.tr('Tracer un texte'),
             callback=self.set_Texte_tool,
-            toolbar=self.dessinToolbar, #inutile ici
-            enabled_flag=False,
             parent=self.iface.mainWindow())
 
         self.id_texte=len(self.actions)-1
@@ -562,8 +648,6 @@ class BnicNancy:
             icon_path15,
             text=self.tr('Tracer un texte orienté'),
             callback=self.set_texteOriente_tool,
-            toolbar=self.dessinToolbar, #inutile ici
-            enabled_flag=False,
             parent=self.iface.mainWindow())
 
         self.id_texteOriente=len(self.actions)-1
@@ -582,24 +666,21 @@ class BnicNancy:
             text=self.tr('Tracer un débord de toit'),
             callback=self.set_debord_tool,
             toolbar=self.symboleToolbar,
-            enabled_flag=False,
             add_to_toolbar=True,
             parent=self.iface.mainWindow())
 
         self.id_debord=len(self.actions)-1
 
 
-        #bouton 3borne
+        #bouton borne
         icon_path17=':/plugins/BnicNancy/icon21.png'
         self.add_action(
             icon_path17,
-            text=self.tr('Tracer une 3borne'),
-            callback=self.set_borne3_tool,
-            toolbar=self.symboleToolbar, #inutile ici
-            enabled_flag=False,
+            text=self.tr('Tracer une borne'),
+            callback=self.set_borne_tool,
             parent=self.iface.mainWindow())
 
-        self.id_3borne=len(self.actions)-1
+        self.id_borne=len(self.actions)-1
 
         #bouton borne retrouvee
         icon_path18=':/plugins/BnicNancy/icon22.png'
@@ -607,16 +688,14 @@ class BnicNancy:
             icon_path18,
             text=self.tr('Tracer une borne retrouvée'),
             callback=self.set_borneRetrouvee_tool,
-            toolbar=self.symboleToolbar, #inutile ici
-            enabled_flag=False,
             parent=self.iface.mainWindow())
 
         self.id_borneRetrouvee=len(self.actions)-1
 
         #Bouton deroulant borne
         boutonMenuBorne = self.borneButton.menu()
-        boutonMenuBorne.addAction(self.actions[self.id_3borne])
-        self.borneButton.setDefaultAction(self.actions[self.id_3borne])   #action par default du bouton
+        boutonMenuBorne.addAction(self.actions[self.id_borne])
+        self.borneButton.setDefaultAction(self.actions[self.id_borne])   #action par default du bouton
         boutonMenuBorne.addAction(self.actions[self.id_borneRetrouvee])
 
 
@@ -626,8 +705,6 @@ class BnicNancy:
             icon_path19,
             text=self.tr('Tracer un mur mitoyen'),
             callback=self.set_murMitoyen_tool,
-            toolbar=self.symboleToolbar, #inutile ici
-            enabled_flag=False,
             parent=self.iface.mainWindow())
 
         self.id_murMitoyen=len(self.actions)-1
@@ -638,18 +715,9 @@ class BnicNancy:
             icon_path20,
             text=self.tr('Tracer un mur NON mitoyen'),
             callback=self.set_murNonMitoyen_tool,
-            toolbar=self.symboleToolbar, #inutile ici
-            enabled_flag=False,
             parent=self.iface.mainWindow())
 
         self.id_murNonMitoyen=len(self.actions)-1
-
-        #Bouton deroulant mur (symbole)
-        boutonMenuMurMit = self.murMitButton.menu()
-        boutonMenuMurMit.addAction(self.actions[self.id_murMitoyen])
-        self.murMitButton.setDefaultAction(self.actions[self.id_murMitoyen])   #action par default du bouton
-        boutonMenuMurMit.addAction(self.actions[self.id_murNonMitoyen])
-
 
         #bouton cloture
         icon_path21=':/plugins/BnicNancy/icon25.png'
@@ -657,12 +725,18 @@ class BnicNancy:
             icon_path21,
             text=self.tr('Tracer une clôture'),
             callback=self.set_cloture_tool,
-            toolbar=self.symboleToolbar,
-            enabled_flag=False,
-            add_to_toolbar=True,
             parent=self.iface.mainWindow())
 
         self.id_cloture=len(self.actions)-1
+
+
+        #Bouton deroulant mur (symbole)
+        boutonMenuMurMit = self.murMitButton.menu()
+        boutonMenuMurMit.addAction(self.actions[self.id_murMitoyen])
+        self.murMitButton.setDefaultAction(self.actions[self.id_murMitoyen])   #action par default du bouton
+        boutonMenuMurMit.addAction(self.actions[self.id_murNonMitoyen])
+        boutonMenuMurMit.addAction(self.actions[self.id_cloture])
+
 
         #bouton biffer
         icon_path22=':/plugins/BnicNancy/icon26.png'
@@ -671,7 +745,6 @@ class BnicNancy:
             text=self.tr('Tracer un biffer'),
             callback=self.set_biffer_tool,
             toolbar=self.symboleToolbar,
-            enabled_flag=False,
             add_to_toolbar=True,
             parent=self.iface.mainWindow())
 
@@ -684,17 +757,108 @@ class BnicNancy:
             text=self.tr('Placer une image'),
             callback=self.set_image_tool,
             toolbar=self.symboleToolbar,
-            enabled_flag=False,
             add_to_toolbar=True,
             parent=self.iface.mainWindow())
 
         self.id_image=len(self.actions)-1
 
 
+        #bouton afficher panneau couche
+        icon_path24=':/plugins/BnicNancy/icon28.png'
+        self.add_action(
+            icon_path24,
+            text=self.tr('Ouvrir/Fermer le panneau Couches'),
+            callback=self.panneau_couche,
+            parent=self.iface.mainWindow())
+
+        self.id_panneauCouche=len(self.actions)-1
+
+        #bouton identifier couche
+        icon_path25=':/plugins/BnicNancy/icon29.png'
+        self.add_action(
+            icon_path25,
+            text=self.tr("Identifier la couche d'un objet"),
+            callback=self.set_identifyLayer_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_identifyLayer=len(self.actions)-1
+
+        #Bouton deroulant couche
+        boutonMenuCouche = self.coucheButton.menu()
+        boutonMenuCouche.addAction(self.actions[self.id_panneauCouche])
+        self.coucheButton.setDefaultAction(self.actions[self.id_panneauCouche])   #action par default du bouton
+        boutonMenuCouche.addAction(self.actions[self.id_identifyLayer])
+
+        #bouton image
+        icon_path26=':/plugins/BnicNancy/icon30.png'
+        self.add_action(
+            icon_path26,
+            text=self.tr('Tracer un polygone'),
+            callback=self.set_polygone_tool,
+            toolbar=self.symboleToolbar,
+            add_to_toolbar=True,
+            parent=self.iface.mainWindow())
+
+        self.id_polygone=len(self.actions)-1
+
+        #translater feature
+        icon_path27 = ':/plugins/BnicNancy/icon31.png'
+        self.add_action(
+            icon_path27,
+            text=self.tr("Déplacer l'entité"),
+            callback=self.set_translation_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_translater_feat=len(self.actions)-1
+
+        #copier translater feature
+        icon_path28 = ':/plugins/BnicNancy/icon32.png'
+        self.add_action(
+            icon_path28,
+            text=self.tr('Copier et déplacer les entités'),
+            callback=self.set_copy_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_copier_feat=len(self.actions)-1
+
+        #Bouton deroulant translation
+        boutonMenuTranslation = self.translationButton.menu()
+        boutonMenuTranslation.addAction(self.actions[self.id_translater_feat])
+        self.translationButton.setDefaultAction(self.actions[self.id_translater_feat])   #action par default du bouton
+        boutonMenuTranslation.addAction(self.actions[self.id_copier_feat])
+
+
+
+        #action generer couche pour nouveau projet (menu uniquement)
+        icon_path29=':/plugins/BnicNancy/icon33.png'
+        self.add_action(
+            icon_path29,
+            text=self.tr('Générer les couches'),
+            callback=self.generate_layers,
+            menu=self.menu,
+            add_to_menu=True,
+            parent=self.iface.mainWindow())
+
+        self.id_generate_layer=len(self.actions)-1
+
+
+        #choix SCR et enregistrer sous
+        icon_path30=':/plugins/BnicNancy/icon34.png'
+        self.add_action(
+            icon_path30,
+            text=self.tr('Choisir un SCR'),
+            callback=self.set_crs,
+            menu=self.menu_scr,
+            enabled_flag=True,
+            add_to_menu=True,
+            parent=self.iface.mainWindow())
+
+        self.id_set_crs=len(self.actions)-1
+
         # will be set False in run()
         self.first_start = True
 
-        #connexion a display_point pour tracer un point
+        #connexion outils-fonctions lorsque clic
         self.clickTool.snapClicked.connect(self.display_point)
 
         self.modifTool.canvasClicked.connect(self.modify_attribute)
@@ -707,32 +871,118 @@ class BnicNancy:
 
         self.debordTool.snapClicked.connect(self.display_debord)
 
+        self.identifyTool.canvasClicked.connect(self.identify_layer)
+
+        self.translateTool.canvasClicked.connect(self.translate_copy_feature)
+
+        self.copyTool.canvasClicked.connect(self.translate_copy_feature)
+
+
 
         #verifie la bonne connexion
         #QMessageBox.information(   self.iface.mainWindow(),"Info", "connect = %s"%str(result) )
 
 
 
+    def lire_crs(self,scr_choisi):
+        i=0
+        l=scr_choisi[i]
+        while l != "\t":
+            i+=1
+            l=scr_choisi[i]
+        crs=scr_choisi[i+1:]
+        return crs.split()[0]
+
+    #Choisir SCR
+    def set_crs(self):
+        self.dlgCrs.show()
+        result = self.dlgCrs.exec_()
+
+        if result:
+
+            crs = self.lire_crs(str(self.dlgCrs.comboBox_crs.currentText()))
+            QgsProject.instance().setCrs(QgsCoordinateReferenceSystem(crs))
+
+            #si le projet a été enregistré
+            if QgsProject.instance().write():
+                self.actions[self.id_generate_layer].setEnabled(True)
+            else:
+                self.iface.messageBar().pushMessage("Le projet n'a pas été enregistré : impossible de créer les couches",level=Qgis.Critical, duration=6)
+
+
+
+    #Save project as
+    def save_project(self):
+        self.iface.actionSaveProjectAs().trigger()
+
+    #Generer couches pour nouveau projet
+    def generate_layers(self):
+
+
+        #crs du projet
+        crs=QgsProject.instance().crs().authid()
+
+        #repertoire projet : il faut enregistrer le projet avant!
+        pathProj=QFileInfo(QgsProject.instance().fileName()).absolutePath()
+
+        for couche in self.listLayers:
+
+            #Repertoire fichiers couche
+            fn=pathProj+"/"+couche[0]+".shp"
+
+            # create fields
+            layerFields = QgsFields()
+
+            #type de l'ID (int pour Point uniquement)
+            if couche[0]=="Point":
+                layerFields.append(QgsField('ID', QVariant.Int))
+            else:
+               layerFields.append(QgsField('ID', QVariant.String))
+
+            #Creation des couches et d'un premier feature (obligatoire pour pouvoir ajouter des entites)
+            if couche[1]=="Point":
+                writer = QgsVectorFileWriter(fn, 'System', layerFields, QgsWkbTypes.Point, QgsCoordinateReferenceSystem(crs), 'ESRI Shapefile')
+                feat = QgsFeature()
+                feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(0, 0)))
+
+            if couche[1]=="Ligne":
+                writer = QgsVectorFileWriter(fn, 'System', layerFields, QgsWkbTypes.Ligne, QgsCoordinateReferenceSystem(crs), 'ESRI Shapefile')
+                feat = QgsFeature()
+                feat.setGeometry(QgsGeometry.fromPolyline([QgsPoint(0,0), QgsPoint(1,1)]))
+
+            if couche[1]=="Polygone":
+                writer = QgsVectorFileWriter(fn, 'System', layerFields, QgsWkbTypes.Polygon, QgsCoordinateReferenceSystem(crs), 'ESRI Shapefile')
+                feat = QgsFeature()
+                feat.setGeometry(QgsGeometry.fromPolygonXY([QgsPoint(0,0), QgsPoint(1,1), QgsPoint(2,2)]))
+
+
+            feat.setAttributes([1])
+            writer.addFeature(feat)
+            layer = self.iface.addVectorLayer(fn, '', 'ogr')
+            del(writer)
+
+            #On supprime l'entite fictive ajoutee
+            layer.dataProvider().deleteFeatures([0])
+
+            #On charge les styles
+            layer.loadNamedStyle(':/Bnicnancy/styles/'+couche[0]+'.qml')
+
+            self.start_function()
+
+
+
+
+
+
+
     #Bouton start
     def start_function(self):
-
-        #couche point
-        # layersP=QgsProject.instance().mapLayersByName("Point")
-
-        #couche coteSurLigne
-        # layersCsurL=QgsProject.instance().mapLayersByName("coteSURLigne")
-
-        #couche cotesansligne
-        # layersCsansL=QgsProject.instance().mapLayersByName("cotesansligne")
-
-
-
 
         try:
             #layer = QgsVectorLayer(prjfi.absolutePath()+"/point.shp", "point", "ogr")
             self.layerPoint=QgsProject.instance().mapLayersByName("Point")[0]
         except:
-            self.iface.messageBar().pushMessage("La couche point n'existe pas",level=Qgis.Critical, duration=3)
+            self.iface.messageBar().pushMessage("La couche Point n'existe pas",level=Qgis.Critical, duration=3)
 
         try:
             self.layerCoteSurLigne=QgsProject.instance().mapLayersByName("coteSURLigne")[0]
@@ -755,9 +1005,9 @@ class BnicNancy:
             self.iface.messageBar().pushMessage("La couche LigneDiscontinue n'existe pas",level=Qgis.Critical, duration=3)
 
         try:
-            self.layer3Borne=QgsProject.instance().mapLayersByName("3borne")[0]
+            self.layerBorne=QgsProject.instance().mapLayersByName("borne")[0]
         except:
-            self.iface.messageBar().pushMessage("La couche 3borne n'existe pas",level=Qgis.Critical, duration=3)
+            self.iface.messageBar().pushMessage("La couche borne n'existe pas",level=Qgis.Critical, duration=3)
 
         try:
             self.layerCloture=QgsProject.instance().mapLayersByName("cloture")[0]
@@ -814,6 +1064,12 @@ class BnicNancy:
         except:
             self.iface.messageBar().pushMessage("La couche debordT n'existe pas",level=Qgis.Critical, duration=3)
 
+        try:
+            self.layerPolygone=QgsProject.instance().mapLayersByName("polygone")[0]
+        except:
+            self.iface.messageBar().pushMessage("La couche polygone n'existe pas",level=Qgis.Critical, duration=3)
+
+
         self.currentLayer=self.iface.activeLayer()
 
 
@@ -824,12 +1080,16 @@ class BnicNancy:
         for feature in self.layerPoint.getFeatures():
             listFeatures.append(feature.id())
 
-        self.numPoint=self.layerPoint.getFeature(max(listFeatures)).attributes()[0]+1
-        self.lastPoint.setText(str(self.numPoint))
+        try:
+            self.numPoint=self.layerPoint.getFeature(max(listFeatures)).attributes()[0]+1
+            self.lastPoint.setText(str(self.numPoint))
+        except:
+            #si nouveau projet : aucun point
+            self.lastPoint.setText(str(self.numPoint))
 
         #activer tous les boutons (sauf annuler)
         for i in range(len(self.actions)):
-            if i!=self.cancel_id:
+            if i!=self.id_cancel and i!=self.id_generate_layer:
                 self.actions[i].setEnabled(True)
 
         #desactiver bouton start
@@ -856,7 +1116,7 @@ class BnicNancy:
         self.currentLayer.commitChanges()
 
         #autoriser annulation
-        self.actions[self.cancel_id].setEnabled(True)
+        self.actions[self.id_cancel].setEnabled(True)
 
         #actualisation num suivant
 
@@ -884,7 +1144,7 @@ class BnicNancy:
 
         #aucun point dans la couche
         else:
-            self.actions[self.cancel_id].setEnabled(False)
+            self.actions[self.id_cancel].setEnabled(False)
 
 
 
@@ -907,18 +1167,18 @@ class BnicNancy:
     def display_segment(self, point, button):
 
         #1er point
-        if len(self.polyList)==0:
+        if len(self.pointList)==0:
             pt=QgsPoint(point.x(),point.y())
-            self.polyList.append(pt)
+            self.pointList.append(pt)
 
         #2e point
         else:
 
             feat = QgsFeature()
-            feat.setGeometry(QgsGeometry.fromPolyline([self.polyList[0], QgsPoint(point.x(),point.y())]))
+            feat.setGeometry(QgsGeometry.fromPolyline([self.pointList[0], QgsPoint(point.x(),point.y())]))
             self.currentLayer.dataProvider().addFeatures([feat])
             self.refresh_layer(self.currentLayer)
-            self.polyList=[]
+            self.pointList=[]
             self.currentLayer.commitChanges()
 
             if self.attribut:
@@ -926,9 +1186,7 @@ class BnicNancy:
                     ft=feature
 
                 #fenetre entrer cote
-                self.dlgAttribut = EntrerAttributDialog()
                 self.dlgAttribut.show()
-                self.dlgAttribut.setFixedSize(368, 116)
 
 
                 result = self.dlgAttribut.exec_()
@@ -961,9 +1219,9 @@ class BnicNancy:
     def display_cote_courbe(self, point, button):
 
         #1er et 2e point
-        if len(self.polyList)<2:
+        if len(self.pointList)<2:
             pt=QgsPoint(point.x(),point.y())
-            self.polyList.append(pt)
+            self.pointList.append(pt)
 
         #3e point
         else:
@@ -972,8 +1230,8 @@ class BnicNancy:
             circularRing = QgsCircularString()
             # Set first point, intermediate point for curvature and end point
             circularRing.setPoints([
-                self.polyList[0],
-                self.polyList[1],
+                self.pointList[0],
+                self.pointList[1],
                 QgsPoint(point.x(),point.y())]
             )
 
@@ -987,7 +1245,7 @@ class BnicNancy:
 
             self.currentLayer.dataProvider().addFeatures([fet])
             self.refresh_layer(self.currentLayer)
-            self.polyList=[]
+            self.pointList=[]
             self.currentLayer.commitChanges()
 
             for feature in self.currentLayer.getFeatures():
@@ -995,9 +1253,8 @@ class BnicNancy:
 
 
             #fenetre entrer cote
-            self.dlgAttribut = EntrerAttributDialog()
             self.dlgAttribut.show()
-            self.dlgAttribut.setFixedSize(368, 116)
+
 
 
             result = self.dlgAttribut.exec_()
@@ -1052,12 +1309,12 @@ class BnicNancy:
         #self.dlgModif.reject() #ferme la fenetre
         self.save_layers()
 
-        self.select_nearest_feature(point, button)
+        obj = self.select_nearest_feature(point, button)
 
-        self.currentLayer.dataProvider().deleteFeatures([self.closestFeatureId])
-
-        self.currentLayer.removeSelection()
-        self.refresh_layer(self.currentLayer)
+        if obj:
+            self.currentLayer.dataProvider().deleteFeatures([self.closestFeatureId])
+            self.currentLayer.removeSelection()
+            self.refresh_layer(self.currentLayer)
 
         #self.canvas.setMapTool(self.toolPan)
 
@@ -1078,20 +1335,18 @@ class BnicNancy:
 
         self.select_nearest_feature(point, button)
 
-        self.dlgModif = ModifPointDialog()
-        self.dlgModif.show()
-        self.dlgModif.setFixedSize(368, 116)
+        self.dlgAttribut.show()
 
 
-        result = self.dlgModif.exec_()
+        result = self.dlgAttribut.exec_()
         # See if OK was pressed
         if result:
             try:
 
-                newValue=self.dlgModif.lineedit_newNum.value()
+                newValue=self.dlgAttribut.lineedit_attribut.value()
 
                 typeName=self.currentLayer.fields()[0].typeName()
-                if  typeName == "Integer54" or typeName == "Integer":
+                if  typeName == "Integer64" or typeName == "Integer":
                     newValue=int(newValue)
                 attrs = {0 : newValue}
                 self.currentLayer.dataProvider().changeAttributeValues({ self.closestFeatureId : attrs })
@@ -1106,8 +1361,46 @@ class BnicNancy:
 
         self.currentLayer.removeSelection()
         #efface le texte des lineEdit
-        self.dlgModif.lineedit_newNum.clearValue()
+        self.dlgAttribut.lineedit_attribut.clearValue()
 
+
+    def set_translation_tool(self):
+        self.copy = False
+        self.canvas.setMapTool(self.translateTool)
+        self.save_layers()
+
+    def set_copy_tool(self):
+        self.copy = True
+        self.canvas.setMapTool(self.copyTool)
+        self.save_layers()
+
+    def translate_copy_feature(self, point, button):
+
+        #1er point
+        if len(self.pointList)==0:
+            self.select_nearest_feature(point, button)
+            pt=QgsPoint(point.x(),point.y())
+            self.pointList.append(pt)
+            print(self.currentLayer.name())
+            #si on veut copier et translater
+            if self.copy:
+                ft=self.currentLayer.getFeature(self.closestFeatureId)
+                self.currentLayer.dataProvider().addFeatures([ft])
+
+        #2e point
+        else:
+
+            feat=self.currentLayer.getFeature(self.closestFeatureId)
+
+            geom=feat.geometry()
+            dx=point.x()-self.pointList[0].x()
+            dy=point.y()-self.pointList[0].y()
+            geom.translate(dx,dy)
+            self.currentLayer.dataProvider().changeGeometryValues({feat.id() : geom})
+            self.refresh_layer(self.currentLayer)
+            self.pointList=[]
+            self.currentLayer.commitChanges()
+            self.currentLayer.removeSelection()
 
 
     def set_ligneContinue_tool(self):
@@ -1154,31 +1447,18 @@ class BnicNancy:
         self.currentLayer.startEditing()
         self.canvas.setMapTool(self.debordTool)
 
-        self.dlgDebord = ChoisirDebordDialog()
         self.dlgDebord.show()
-        self.dlgDebord.setFixedSize(854, 155)
 
-
-        self.dlgDebord.pushButton_0.clicked.connect(self.set_debord0)
-        self.dlgDebord.pushButton_10.clicked.connect(self.set_debord10)
-        self.dlgDebord.pushButton_20.clicked.connect(self.set_debord20)
-        self.dlgDebord.pushButton_30.clicked.connect(self.set_debord30)
-        self.dlgDebord.pushButton_40.clicked.connect(self.set_debord40)
-        self.dlgDebord.pushButton_50.clicked.connect(self.set_debord50)
-        self.dlgDebord.pushButton_60.clicked.connect(self.set_debord60)
-        self.dlgDebord.pushButton_70.clicked.connect(self.set_debord70)
-        self.dlgDebord.pushButton_80.clicked.connect(self.set_debord80)
-        self.dlgDebord.pushButton_90.clicked.connect(self.set_debord90)
 
         result = self.dlgDebord.exec_()
         # See if OK was pressed
         if result:
             try:
                 self.debord=self.dlgDebord.lineedit_debord.value()
-                print(self.debord)
             except:
                 pass
         self.dlgDebord.lineedit_debord.clearValue()
+        self.dlgClavierNum.lineedit_valeur.clearValue()
 
 
     def set_debord0(self):
@@ -1224,8 +1504,8 @@ class BnicNancy:
         self.refresh_layer(self.currentLayer)
 
 
-    def set_borne3_tool(self):
-        self.currentLayer = self.layer3Borne
+    def set_borne_tool(self):
+        self.currentLayer = self.layerBorne
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.iface.actionAddFeature().trigger()
@@ -1269,6 +1549,88 @@ class BnicNancy:
         self.currentLayer.startEditing()
         self.iface.actionAddFeature().trigger()
 
+    def set_polygone_tool(self):
+        self.currentLayer = self.layerPolygone
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.iface.actionAddFeature().trigger()
+
+    def make_clavier_num(self,lineedit):
+        #necessary to call a function with parameters when button clavier is pressed
+        def clavier_num():
+            self.dlgClavierNum.show()
+
+
+            result = self.dlgClavierNum.exec_()
+            print(lineedit.value())
+            # See if OK was pressed
+            if result:
+                lineedit.setText(self.dlgClavierNum.lineedit_valeur.value())
+                self.dlgClavierNum.lineedit_valeur.clearValue()
+
+        return clavier_num
+
+
+    def key_0(self):
+        value=self.dlgClavierNum.lineedit_valeur.value()
+        self.dlgClavierNum.lineedit_valeur.setText(value+"0")
+    def key_1(self):
+        value=self.dlgClavierNum.lineedit_valeur.value()
+        self.dlgClavierNum.lineedit_valeur.setText(value+"1")
+    def key_2(self):
+        value=self.dlgClavierNum.lineedit_valeur.value()
+        self.dlgClavierNum.lineedit_valeur.setText(value+"2")
+    def key_3(self):
+        value=self.dlgClavierNum.lineedit_valeur.value()
+        self.dlgClavierNum.lineedit_valeur.setText(value+"3")
+    def key_4(self):
+        value=self.dlgClavierNum.lineedit_valeur.value()
+        self.dlgClavierNum.lineedit_valeur.setText(value+"4")
+    def key_5(self):
+        value=self.dlgClavierNum.lineedit_valeur.value()
+        self.dlgClavierNum.lineedit_valeur.setText(value+"5")
+    def key_6(self):
+        value=self.dlgClavierNum.lineedit_valeur.value()
+        self.dlgClavierNum.lineedit_valeur.setText(value+"6")
+    def key_7(self):
+        value=self.dlgClavierNum.lineedit_valeur.value()
+        self.dlgClavierNum.lineedit_valeur.setText(value+"7")
+    def key_8(self):
+        value=self.dlgClavierNum.lineedit_valeur.value()
+        self.dlgClavierNum.lineedit_valeur.setText(value+"8")
+    def key_9(self):
+        value=self.dlgClavierNum.lineedit_valeur.value()
+        self.dlgClavierNum.lineedit_valeur.setText(value+"9")
+    def key_coma(self):
+        value=self.dlgClavierNum.lineedit_valeur.value()
+        self.dlgClavierNum.lineedit_valeur.setText(value+".")
+    def key_del(self):
+        value=self.dlgClavierNum.lineedit_valeur.value()
+        self.dlgClavierNum.lineedit_valeur.setText(value[:-1])
+
+
+    #identify the layer of a selected object
+    def set_identifyLayer_tool(self):
+        self.canvas.setMapTool(self.identifyTool)
+        self.canvas.setCursor(QCursor(Qt.WhatsThisCursor))
+
+
+    def identify_layer(self, point, button):
+
+        self.select_nearest_feature(point, button)
+
+        iface.messageBar().pushMessage(self.currentLayer.name(),level=Qgis.Info, duration=5)
+
+
+
+    #show/hide layer pannel
+    def panneau_couche(self):
+        for widget in iface.mainWindow().findChildren(QDockWidget):
+            if widget.objectName() == 'Layers':
+                if widget.isVisible():
+                    widget.hide() #hide()
+                else:
+                    widget.show()
 
     #Compute the highest point attribute
     def max_Point(self):
@@ -1349,23 +1711,25 @@ class BnicNancy:
         if not len(layerData) > 0:
             # Looks like no vector layers were found - do nothing
             self.iface.messageBar().pushMessage("Aucun objet trouvé",level=Qgis.Critical, duration=3)
-            return
+            return False
 
         # Sort the layer information by shortest distance
         layerData.sort( key=lambda element: element[2] )
 
         if layerData[0][2]>5:
             # Looks like no close elements were found - do nothing
-            self.iface.messageBar().pushMessage("Aucun objet trouvé",level=Qgis.Critical, duration=3)
-            return
-
-        else:
-            # Select the closest feature
-            layerWithClosestFeature, self.closestFeatureId, shortestDistance = layerData[0]
-            layerWithClosestFeature.select( self.closestFeatureId )
-            self.currentLayer=layerWithClosestFeature
+            self.iface.messageBar().pushMessage("Aucun objet proche trouvé",level=Qgis.Critical, duration=3)
+            print(layerData[0][2])
+            return False
 
 
+        # Select the closest feature
+        layerWithClosestFeature, self.closestFeatureId, shortestDistance = layerData[0]
+        layerWithClosestFeature.select( self.closestFeatureId )
+        self.currentLayer=layerWithClosestFeature
+        print(self.closestFeatureId)
+
+        return True
 
     #refresh canvas
     def refresh_layer(self,layer):
@@ -1376,10 +1740,7 @@ class BnicNancy:
 
     def afficher_liste_point(self):
 
-        self.dlgListe = ListePointDialog()
         self.dlgListe.show()
-        self.dlgListe.setFixedSize(275, 439)
-
 
         #remplit liste de points
 
@@ -1400,11 +1761,14 @@ class BnicNancy:
 
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
-        for action in self.actions:
-            self.iface.removePluginMenu(
-                self.tr(u'&BnicNancy'),
-                action)
+        # for action in self.actions:
+        #     self.iface.removePluginMenu(
+        #         self.tr(u'&BnicNancy'),
+        #         action)
             #self.iface.removeToolBarIcon(action)
+
+        self.menu.deleteLater()
+        self.menu_scr.deleteLater()
 
         #self.iface.removeToolBarIcon(self.toolBtnAction)
         self.toolbar.clear()
@@ -1441,6 +1805,10 @@ class BnicNancy:
         self.canvas.unsetMapTool(self.deleteTool)
         self.canvas.unsetMapTool(self.arcTool)
         self.canvas.unsetMapTool(self.debordTool)
+        self.canvas.unsetMapTool(self.identifyTool)
+        self.canvas.unsetMapTool(self.translateTool)
+        self.canvas.unsetMapTool(self.copyTool)
+
 
 
 
@@ -1451,24 +1819,15 @@ class BnicNancy:
         # Only create GUI ONCE in callback, so that it will only load when the plugin is started
         if self.first_start == True:
             self.first_start = False
-            self.dlg = BnicNancyDialog()
 
-        #self.dlg.button_para.clicked.connect(self.open_style_point)
 
         # show the dialog
         self.dlg.show()
 
-        #empeche redimensionnement fenetre
-        self.dlg.setFixedSize(477, 161)
-
         #remplit la zone de texte avec le point max
         self.max_Point()
-
         self.dlg.lineedit_numac.setReadOnly(True)
         self.dlg.lineedit_numac.setText(str(self.pointmax))
-        #self.lastPoint.setText(str(self.pointmax))
-
-        self.dlg.button_listePoint.clicked.connect(self.afficher_liste_point)
 
 
         # Run the dialog event loop
@@ -1479,7 +1838,6 @@ class BnicNancy:
 
             try:
                 self.numPoint = int(self.dlg.lineedit_numin.value())
-                #self.lastPoint.setText(str(self.numPoint))
 
             except:
                 pass
@@ -1487,17 +1845,13 @@ class BnicNancy:
             try:
                 inc=self.increment
                 self.increment=int(self.dlg.lineedit_inc.value())
-                self.numPoint=self.numPoint-inc
-                self.numPoint=self.numPoint+self.increment
-                #self.lastPoint.setText(str(self.numPoint))
+                self.numPoint-=inc
+                self.numPoint+=self.increment
 
             except:
                 pass
 
             self.lastPoint.setText(str(self.numPoint))
-
-
-            #self.dlg.button_para.clicked.copyColor()
 
 
         #efface le texte des lineEdit
