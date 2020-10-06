@@ -47,7 +47,8 @@ from qgis.core import (QgsCoordinateReferenceSystem,
                        QgsWkbTypes,
                        QgsFields,
                        QgsField,
-                       QgsVectorFileWriter)
+                       QgsVectorFileWriter,
+                       QgsLayerTreeLayer)
 
 # Initialize Qt resources from file resources.py
 from .resources import *
@@ -329,12 +330,16 @@ class BnicNancy:
 
         #Fenetre choix SCR
         self.dlgCrs = CrsDialog()
-        self.dlgCrs.setFixedSize(453, 156)
-        self.dlgCrs.comboBox_crs.addItems(['RGF93 / CC48\tESPG:3948','RGF93 / CC49\tESPG:3949','RGF93 / CC50\tESPG:3950'])
+        self.dlgCrs.setFixedSize(453, 190)
+        self.dlgCrs.comboBox_crs.addItems(['RGF93 / CC48   EPSG:3948','RGF93 / CC49   EPSG:3949','RGF93 / CC50   EPSG:3950'])
+        self.dlgCrs.lineEdit_path.setReadOnly(True)
         self.dlgCrs.pushButton_saveAs.clicked.connect(self.save_project)
 
-        #Liste des couches et de leur type
-        self.listLayers = [("debordT","Point"),("borne","Point"),("cloture","Point"),("murmitoyen","Ligne"),("murnonmi","Ligne"),("borne_retrouvee","Point"),   ("biffer","Ligne"),("MurDroite","Ligne"),("Point","Point"),("Texte","Point"),("TexteOriente","Ligne"),("MurMilieu","Ligne"),("coteSURLigne","Ligne"),("LigneDiscontinue","Ligne"),("LigneContinue","Ligne"),("cotesansligne","Ligne"),("polygone","Polygone"),("image","Point")]
+        #Put the window on the foreground
+        self.iface.actionSaveProjectAs().triggered.connect(self.set_crs_on_top)
+
+        #Liste des couches, de leur type et leur groupe
+        self.listLayers = [("debordT","Point","Symbole"),("borne","Point","Symbole"),("cloture","Point","Symbole"),("murmitoyen","Ligne","Symbole"),("murnonmi","Ligne","Symbole"),("borne_retrouvee","Point","Symbole"),   ("biffer","Ligne","Symbole"),("MurDroite","Ligne","Dessin"),("Point","Point","Dessin"),("Texte","Point","Dessin"),("TexteOriente","Ligne","Dessin"),("MurMilieu","Ligne","Dessin"),("coteSURLigne","Ligne","Dessin"),("LigneDiscontinue","Ligne","Dessin"),("LigneContinue","Ligne","Dessin"),("cotesansligne","Ligne","Dessin"),("polygone","Polygone","Dessin"),("image","Point","Autre")]
 
 
 
@@ -886,15 +891,27 @@ class BnicNancy:
 
     def lire_crs(self,scr_choisi):
         i=0
-        l=scr_choisi[i]
-        while l != "\t":
+        nm=""
+        np=scr_choisi[i]
+        while nm != " " or np != " ":
             i+=1
-            l=scr_choisi[i]
-        crs=scr_choisi[i+1:]
+            nm=np
+            np=scr_choisi[i]
+        crs=scr_choisi[i+2:]
         return crs.split()[0]
+
+    #remettre la fenetre au premier plan apres enregistrement
+    def set_crs_on_top(self):
+        if not self.dlgCrs.isHidden():
+            self.dlgCrs.activateWindow()
+            pathProj=QgsProject.instance().fileName()
+            self.dlgCrs.lineEdit_path.setText(pathProj)
 
     #Choisir SCR
     def set_crs(self):
+
+        #self.dlgCrs.setWindowFlags(self.dlgCrs.windowFlags() | Qt.WindowStaysOnTopHint)
+
         self.dlgCrs.show()
         result = self.dlgCrs.exec_()
 
@@ -902,7 +919,7 @@ class BnicNancy:
 
             crs = self.lire_crs(str(self.dlgCrs.comboBox_crs.currentText()))
             QgsProject.instance().setCrs(QgsCoordinateReferenceSystem(crs))
-
+            print(crs)
             #si le projet a été enregistré
             if QgsProject.instance().write():
                 self.actions[self.id_generate_layer].setEnabled(True)
@@ -925,6 +942,18 @@ class BnicNancy:
         #repertoire projet : il faut enregistrer le projet avant!
         pathProj=QFileInfo(QgsProject.instance().fileName()).absolutePath()
 
+        #creation des groupes
+        root = QgsProject.instance().layerTreeRoot()
+        cad_dessin = root.addGroup("Cad_Dessin")    #groupe principal
+
+        symbole=cad_dessin.addGroup("Symbole")
+        dessin=cad_dessin.addGroup("Dessin")
+        autre=cad_dessin.addGroup("Autre")
+
+
+        print("crs: ",crs)
+        print(pathProj)
+
         for couche in self.listLayers:
 
             #Repertoire fichiers couche
@@ -946,14 +975,14 @@ class BnicNancy:
                 feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(0, 0)))
 
             if couche[1]=="Ligne":
-                writer = QgsVectorFileWriter(fn, 'System', layerFields, QgsWkbTypes.Ligne, QgsCoordinateReferenceSystem(crs), 'ESRI Shapefile')
+                writer = QgsVectorFileWriter(fn, 'System', layerFields, QgsWkbTypes.LineString, QgsCoordinateReferenceSystem(crs), 'ESRI Shapefile')
                 feat = QgsFeature()
                 feat.setGeometry(QgsGeometry.fromPolyline([QgsPoint(0,0), QgsPoint(1,1)]))
 
             if couche[1]=="Polygone":
                 writer = QgsVectorFileWriter(fn, 'System', layerFields, QgsWkbTypes.Polygon, QgsCoordinateReferenceSystem(crs), 'ESRI Shapefile')
                 feat = QgsFeature()
-                feat.setGeometry(QgsGeometry.fromPolygonXY([QgsPoint(0,0), QgsPoint(1,1), QgsPoint(2,2)]))
+                feat.setGeometry(QgsGeometry.fromPolygonXY([[QgsPointXY(0,0), QgsPointXY(1,1), QgsPointXY(2,2)]]))
 
 
             feat.setAttributes([1])
@@ -965,12 +994,34 @@ class BnicNancy:
             layer.dataProvider().deleteFeatures([0])
 
             #On charge les styles
-            layer.loadNamedStyle(':/Bnicnancy/styles/'+couche[0]+'.qml')
+            success=layer.loadNamedStyle(self.plugin_dir+'/styles/'+couche[0]+'.qml')
+            if not success[1]:
+                self.iface.messageBar().pushMessage("Impossible de charger le style de la couche: "+couche[0],level=Qgis.Critical, duration=3)
 
-            self.start_function()
+            #ajout dans un groupe
+            root = QgsProject.instance().layerTreeRoot()
+            layerT = root.findLayer(layer.id())
+            clone=layerT.clone()
+            parent=layerT.parent()
+
+            if couche[2]=="Symbole":
+                #ajout au groupe
+                symbole.insertChildNode(0, QgsLayerTreeLayer(layer))
+
+            if couche[2]=="Dessin":
+                #ajout au groupe
+                dessin.insertChildNode(0, QgsLayerTreeLayer(layer))
+
+            if couche[2]=="Autre":
+                #ajout au groupe
+                autre.insertChildNode(0, QgsLayerTreeLayer(layer))
+
+            #suppression de la couche initiale
+            parent.removeChildNode(layerT)
 
 
-
+        #enable tools
+        self.start_function()
 
 
 
@@ -1025,9 +1076,9 @@ class BnicNancy:
             self.iface.messageBar().pushMessage("La couche murnonmi n'existe pas",level=Qgis.Critical, duration=3)
 
         try:
-            self.layerBorneRetrouvee=QgsProject.instance().mapLayersByName("borne_retrouvée")[0]
+            self.layerBorneRetrouvee=QgsProject.instance().mapLayersByName("borne_retrouvee")[0]
         except:
-            self.iface.messageBar().pushMessage("La couche borne_retrouvée n'existe pas",level=Qgis.Critical, duration=3)
+            self.iface.messageBar().pushMessage("La couche borne_retrouvee n'existe pas",level=Qgis.Critical, duration=3)
 
         try:
             self.layerBiffer=QgsProject.instance().mapLayersByName("biffer")[0]
@@ -1047,7 +1098,7 @@ class BnicNancy:
         try:
             self.layerTexteOriente=QgsProject.instance().mapLayersByName("TexteOriente")[0]
         except:
-            self.iface.messageBar().pushMessage("La couche TexteOrienté n'existe pas",level=Qgis.Critical, duration=3)
+            self.iface.messageBar().pushMessage("La couche TexteOriente n'existe pas",level=Qgis.Critical, duration=3)
 
         try:
             self.layerMurMilieu=QgsProject.instance().mapLayersByName("MurMilieu")[0]
