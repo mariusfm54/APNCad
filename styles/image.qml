@@ -1,36 +1,36 @@
 <!DOCTYPE qgis PUBLIC 'http://mrcc.com/qgis.dtd' 'SYSTEM'>
-<qgis version="3.12.0-București" simplifyLocal="1" readOnly="0" minScale="100000000" maxScale="0" simplifyDrawingHints="0" hasScaleBasedVisibilityFlag="0" styleCategories="AllStyleCategories" simplifyAlgorithm="0" simplifyDrawingTol="1" labelsEnabled="0" simplifyMaxScale="1">
+<qgis simplifyMaxScale="1" simplifyDrawingTol="1" readOnly="0" minScale="100000000" styleCategories="AllStyleCategories" labelsEnabled="0" maxScale="0" simplifyAlgorithm="0" simplifyLocal="1" version="3.12.0-București" hasScaleBasedVisibilityFlag="0" simplifyDrawingHints="0">
   <flags>
     <Identifiable>1</Identifiable>
     <Removable>1</Removable>
     <Searchable>1</Searchable>
   </flags>
-  <renderer-v2 symbollevels="0" forceraster="0" enableorderby="0" type="singleSymbol">
+  <renderer-v2 type="singleSymbol" symbollevels="0" forceraster="0" enableorderby="0">
     <symbols>
-      <symbol alpha="1" name="0" force_rhr="0" type="marker" clip_to_extent="1">
-        <layer class="SvgMarker" enabled="1" pass="0" locked="0">
-          <prop k="angle" v="0"/>
-          <prop k="color" v="64,94,193,255"/>
-          <prop k="fixedAspectRatio" v="0"/>
-          <prop k="horizontal_anchor_point" v="1"/>
-          <prop k="name" v="gpsicons/camera.svg"/>
-          <prop k="offset" v="0,0"/>
-          <prop k="offset_map_unit_scale" v="3x:0,0,0,0,0,0"/>
-          <prop k="offset_unit" v="MapUnit"/>
-          <prop k="outline_color" v="255,255,255,255"/>
-          <prop k="outline_width" v="0"/>
-          <prop k="outline_width_map_unit_scale" v="3x:0,0,0,0,0,0"/>
-          <prop k="outline_width_unit" v="MapUnit"/>
-          <prop k="scale_method" v="diameter"/>
-          <prop k="size" v="3"/>
-          <prop k="size_map_unit_scale" v="3x:0,0,0,0,0,0"/>
-          <prop k="size_unit" v="MapUnit"/>
-          <prop k="vertical_anchor_point" v="1"/>
+      <symbol type="marker" force_rhr="0" alpha="1" clip_to_extent="1" name="0">
+        <layer enabled="1" class="SvgMarker" locked="0" pass="0">
+          <prop v="0" k="angle"/>
+          <prop v="64,94,193,255" k="color"/>
+          <prop v="0" k="fixedAspectRatio"/>
+          <prop v="1" k="horizontal_anchor_point"/>
+          <prop v="gpsicons/camera.svg" k="name"/>
+          <prop v="0,0" k="offset"/>
+          <prop v="3x:0,0,0,0,0,0" k="offset_map_unit_scale"/>
+          <prop v="MapUnit" k="offset_unit"/>
+          <prop v="255,255,255,255" k="outline_color"/>
+          <prop v="0" k="outline_width"/>
+          <prop v="3x:0,0,0,0,0,0" k="outline_width_map_unit_scale"/>
+          <prop v="MapUnit" k="outline_width_unit"/>
+          <prop v="diameter" k="scale_method"/>
+          <prop v="3" k="size"/>
+          <prop v="3x:0,0,0,0,0,0" k="size_map_unit_scale"/>
+          <prop v="MapUnit" k="size_unit"/>
+          <prop v="1" k="vertical_anchor_point"/>
           <data_defined_properties>
             <Option type="Map">
-              <Option value="" name="name" type="QString"/>
+              <Option type="QString" value="" name="name"/>
               <Option name="properties"/>
-              <Option value="collection" name="type" type="QString"/>
+              <Option type="QString" value="collection" name="type"/>
             </Option>
           </data_defined_properties>
         </layer>
@@ -40,8 +40,8 @@
     <sizescale/>
   </renderer-v2>
   <customproperties>
-    <property value="id" key="dualview/previewExpressions"/>
-    <property value="0" key="embeddedWidgets/count"/>
+    <property key="dualview/previewExpressions" value="id"/>
+    <property key="embeddedWidgets/count" value="0"/>
     <property key="variableNames"/>
     <property key="variableValues"/>
   </customproperties>
@@ -49,33 +49,33 @@
   <featureBlendMode>0</featureBlendMode>
   <layerOpacity>1</layerOpacity>
   <SingleCategoryDiagramRenderer diagramType="Histogram" attributeLegend="1">
-    <DiagramCategory sizeType="MM" penColor="#000000" backgroundAlpha="255" lineSizeScale="3x:0,0,0,0,0,0" scaleDependency="Area" showAxis="0" opacity="1" height="15" minScaleDenominator="0" sizeScale="3x:0,0,0,0,0,0" backgroundColor="#ffffff" penWidth="0" diagramOrientation="Up" spacing="0" enabled="0" penAlpha="255" width="15" spacingUnitScale="3x:0,0,0,0,0,0" labelPlacementMethod="XHeight" spacingUnit="MM" lineSizeType="MM" rotationOffset="270" maxScaleDenominator="1e+08" barWidth="5" direction="1" scaleBasedVisibility="0" minimumSize="0">
-      <fontProperties description="MS Shell Dlg 2,7.875,-1,5,50,0,0,0,0,0" style=""/>
-      <attribute color="#000000" label="" field=""/>
+    <DiagramCategory penColor="#000000" backgroundAlpha="255" labelPlacementMethod="XHeight" opacity="1" sizeScale="3x:0,0,0,0,0,0" lineSizeType="MM" direction="1" scaleBasedVisibility="0" minimumSize="0" spacingUnitScale="3x:0,0,0,0,0,0" enabled="0" rotationOffset="270" minScaleDenominator="0" height="15" barWidth="5" showAxis="0" penWidth="0" spacing="0" lineSizeScale="3x:0,0,0,0,0,0" maxScaleDenominator="1e+08" backgroundColor="#ffffff" sizeType="MM" spacingUnit="MM" width="15" diagramOrientation="Up" penAlpha="255" scaleDependency="Area">
+      <fontProperties style="" description="MS Shell Dlg 2,7.875,-1,5,50,0,0,0,0,0"/>
+      <attribute field="" label="" color="#000000"/>
       <axisSymbol>
-        <symbol alpha="1" name="" force_rhr="0" type="line" clip_to_extent="1">
-          <layer class="SimpleLine" enabled="1" pass="0" locked="0">
-            <prop k="capstyle" v="square"/>
-            <prop k="customdash" v="5;2"/>
-            <prop k="customdash_map_unit_scale" v="3x:0,0,0,0,0,0"/>
-            <prop k="customdash_unit" v="MM"/>
-            <prop k="draw_inside_polygon" v="0"/>
-            <prop k="joinstyle" v="bevel"/>
-            <prop k="line_color" v="35,35,35,255"/>
-            <prop k="line_style" v="solid"/>
-            <prop k="line_width" v="0.26"/>
-            <prop k="line_width_unit" v="MM"/>
-            <prop k="offset" v="0"/>
-            <prop k="offset_map_unit_scale" v="3x:0,0,0,0,0,0"/>
-            <prop k="offset_unit" v="MM"/>
-            <prop k="ring_filter" v="0"/>
-            <prop k="use_custom_dash" v="0"/>
-            <prop k="width_map_unit_scale" v="3x:0,0,0,0,0,0"/>
+        <symbol type="line" force_rhr="0" alpha="1" clip_to_extent="1" name="">
+          <layer enabled="1" class="SimpleLine" locked="0" pass="0">
+            <prop v="square" k="capstyle"/>
+            <prop v="5;2" k="customdash"/>
+            <prop v="3x:0,0,0,0,0,0" k="customdash_map_unit_scale"/>
+            <prop v="MM" k="customdash_unit"/>
+            <prop v="0" k="draw_inside_polygon"/>
+            <prop v="bevel" k="joinstyle"/>
+            <prop v="35,35,35,255" k="line_color"/>
+            <prop v="solid" k="line_style"/>
+            <prop v="0.26" k="line_width"/>
+            <prop v="MM" k="line_width_unit"/>
+            <prop v="0" k="offset"/>
+            <prop v="3x:0,0,0,0,0,0" k="offset_map_unit_scale"/>
+            <prop v="MM" k="offset_unit"/>
+            <prop v="0" k="ring_filter"/>
+            <prop v="0" k="use_custom_dash"/>
+            <prop v="3x:0,0,0,0,0,0" k="width_map_unit_scale"/>
             <data_defined_properties>
               <Option type="Map">
-                <Option value="" name="name" type="QString"/>
+                <Option type="QString" value="" name="name"/>
                 <Option name="properties"/>
-                <Option value="collection" name="type" type="QString"/>
+                <Option type="QString" value="collection" name="type"/>
               </Option>
             </data_defined_properties>
           </layer>
@@ -83,12 +83,12 @@
       </axisSymbol>
     </DiagramCategory>
   </SingleCategoryDiagramRenderer>
-  <DiagramLayerSettings priority="0" obstacle="0" showAll="1" placement="0" dist="0" linePlacementFlags="18" zIndex="0">
+  <DiagramLayerSettings placement="0" dist="0" showAll="1" linePlacementFlags="18" priority="0" zIndex="0" obstacle="0">
     <properties>
       <Option type="Map">
-        <Option value="" name="name" type="QString"/>
+        <Option type="QString" value="" name="name"/>
         <Option name="properties"/>
-        <Option value="collection" name="type" type="QString"/>
+        <Option type="QString" value="collection" name="type"/>
       </Option>
     </properties>
   </DiagramLayerSettings>
@@ -99,69 +99,57 @@
   <referencedLayers/>
   <referencingLayers/>
   <fieldConfiguration>
-    <field name="id">
-      <editWidget type="TextEdit">
-        <config>
-          <Option/>
-        </config>
-      </editWidget>
-    </field>
     <field name="image">
       <editWidget type="ExternalResource">
         <config>
           <Option type="Map">
-            <Option value="D:/rem880465/AY delim_levé/photo delim" name="DefaultRoot" type="QString"/>
-            <Option value="0" name="DocumentViewer" type="int"/>
-            <Option value="0" name="DocumentViewerHeight" type="int"/>
-            <Option value="0" name="DocumentViewerWidth" type="int"/>
-            <Option value="true" name="FileWidget" type="bool"/>
-            <Option value="true" name="FileWidgetButton" type="bool"/>
-            <Option value="" name="FileWidgetFilter" type="QString"/>
-            <Option name="PropertyCollection" type="Map">
-              <Option value="" name="name" type="QString"/>
-              <Option name="properties" type="invalid"/>
-              <Option value="collection" name="type" type="QString"/>
+            <Option type="QString" value="D:/rem880465/AY delim_levé/photo delim" name="DefaultRoot"/>
+            <Option type="int" value="0" name="DocumentViewer"/>
+            <Option type="int" value="0" name="DocumentViewerHeight"/>
+            <Option type="int" value="0" name="DocumentViewerWidth"/>
+            <Option type="bool" value="true" name="FileWidget"/>
+            <Option type="bool" value="true" name="FileWidgetButton"/>
+            <Option type="QString" value="" name="FileWidgetFilter"/>
+            <Option type="Map" name="PropertyCollection">
+              <Option type="QString" value="" name="name"/>
+              <Option type="invalid" name="properties"/>
+              <Option type="QString" value="collection" name="type"/>
             </Option>
-            <Option value="0" name="RelativeStorage" type="int"/>
-            <Option value="0" name="StorageMode" type="int"/>
+            <Option type="int" value="0" name="RelativeStorage"/>
+            <Option type="int" value="0" name="StorageMode"/>
           </Option>
         </config>
       </editWidget>
     </field>
   </fieldConfiguration>
   <aliases>
-    <alias name="" field="id" index="0"/>
-    <alias name="" field="image" index="1"/>
+    <alias field="image" index="0" name=""/>
   </aliases>
   <excludeAttributesWMS/>
   <excludeAttributesWFS/>
   <defaults>
-    <default expression="" field="id" applyOnUpdate="0"/>
-    <default expression="" field="image" applyOnUpdate="0"/>
+    <default field="image" expression="" applyOnUpdate="0"/>
   </defaults>
   <constraints>
-    <constraint exp_strength="0" notnull_strength="0" unique_strength="0" constraints="0" field="id"/>
-    <constraint exp_strength="0" notnull_strength="0" unique_strength="0" constraints="0" field="image"/>
+    <constraint field="image" exp_strength="0" unique_strength="0" constraints="0" notnull_strength="0"/>
   </constraints>
   <constraintExpressions>
-    <constraint desc="" field="id" exp=""/>
-    <constraint desc="" field="image" exp=""/>
+    <constraint field="image" exp="" desc=""/>
   </constraintExpressions>
   <expressionfields/>
   <attributeactions>
-    <defaultAction value="{46630bf7-828b-4d99-9e2c-c9803a507fd2}" key="Canvas"/>
-    <actionsetting shortTitle="" notificationMessage="" isEnabledOnlyWhenEditable="0" name="afficher image" capture="0" type="5" id="{46630bf7-828b-4d99-9e2c-c9803a507fd2}" icon="" action="[% &quot;image&quot; %]">
+    <defaultAction key="Canvas" value="{00000000-0000-0000-0000-000000000000}"/>
+    <actionsetting id="{7f86a726-c789-4ef0-abc9-4283e6e57b79}" notificationMessage="" type="5" icon="" isEnabledOnlyWhenEditable="0" capture="0" shortTitle="" action="[% &quot;image&quot; %]" name="afficher image">
       <actionScope id="Field"/>
-      <actionScope id="Feature"/>
       <actionScope id="Layer"/>
+      <actionScope id="Feature"/>
       <actionScope id="Canvas"/>
     </actionsetting>
   </attributeactions>
-  <attributetableconfig actionWidgetStyle="dropDown" sortExpression="" sortOrder="0">
+  <attributetableconfig actionWidgetStyle="dropDown" sortOrder="0" sortExpression="">
     <columns>
-      <column hidden="0" name="id" type="field" width="-1"/>
-      <column hidden="0" name="image" type="field" width="-1"/>
-      <column hidden="0" type="actions" width="-1"/>
+      <column type="field" hidden="0" width="-1" name="image"/>
+      <column type="actions" hidden="0" width="-1"/>
     </columns>
   </attributetableconfig>
   <conditionalstyles>
@@ -191,15 +179,15 @@ def my_form_open(dialog, layer, feature):
   <featformsuppress>0</featformsuppress>
   <editorlayout>generatedlayout</editorlayout>
   <editable>
-    <field name="id" editable="1"/>
-    <field name="image" editable="1"/>
+    <field editable="1" name="id"/>
+    <field editable="1" name="image"/>
   </editable>
   <labelOnTop>
     <field labelOnTop="0" name="id"/>
     <field labelOnTop="0" name="image"/>
   </labelOnTop>
   <widgets/>
-  <previewExpression>id</previewExpression>
+  <previewExpression>image</previewExpression>
   <mapTip></mapTip>
   <layerGeometryType>0</layerGeometryType>
 </qgis>

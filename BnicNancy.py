@@ -59,11 +59,13 @@ from .EntrerAttribut_dialog import EntrerAttributDialog
 from .ChoisirDebord_dialog import ChoisirDebordDialog
 from .ClavierNum_dialog import ClavierNumDialog
 from .Crs_dialog import CrsDialog
+from .Laserm_dialog import LasermDialog
 
 import os.path
 import sys
 import time
 import pyautogui
+import math as Maths
 
 
 class BnicNancy:
@@ -341,7 +343,12 @@ class BnicNancy:
         #Liste des couches, de leur type et leur groupe
         self.listLayers = [("debordT","Point","Symbole"),("borne","Point","Symbole"),("cloture","Point","Symbole"),("murmitoyen","Ligne","Symbole"),("murnonmi","Ligne","Symbole"),("borne_retrouvee","Point","Symbole"),   ("biffer","Ligne","Symbole"),("MurDroite","Ligne","Dessin"),("Point","Point","Dessin"),("Texte","Point","Dessin"),("TexteOriente","Ligne","Dessin"),("MurMilieu","Ligne","Dessin"),("coteSURLigne","Ligne","Dessin"),("LigneDiscontinue","Ligne","Dessin"),("LigneContinue","Ligne","Dessin"),("cotesansligne","Ligne","Dessin"),("polygone","Polygone","Dessin"),("image","Point","Autre")]
 
-
+        #Fenetre mesure laser metre
+        self.dist_laser=0
+        self.dlgLaser = LasermDialog()
+        self.dlgLaser.setFixedSize(453,165)
+        self.dlgLaser.lineEdit_dist.textChanged.connect(self.make_select_text(self.dlgLaser.lineEdit_dist))
+        self.dlgLaser.lineEdit_dist.textChanged.connect(self.calcul_dist_horizon)
 
         #Outils
         #Tracer point
@@ -860,6 +867,18 @@ class BnicNancy:
 
         self.id_set_crs=len(self.actions)-1
 
+        #bouton laser metre
+        icon_path31=':/plugins/BnicNancy/icon35.png'
+        self.add_action(
+            icon_path31,
+            text=self.tr('Prendre mesure au lasermètre'),
+            callback=self.mesure_laser,
+            toolbar=self.toolbar,
+            add_to_toolbar=True,
+            parent=self.iface.mainWindow())
+
+        self.id_laser=len(self.actions)-1
+
         # will be set False in run()
         self.first_start = True
 
@@ -965,6 +984,8 @@ class BnicNancy:
             #type de l'ID (int pour Point uniquement)
             if couche[0]=="Point":
                 layerFields.append(QgsField('ID', QVariant.Int))
+            # elif couche[0]=="image":
+            #     layerFields.append(QgsField('ID', QVariant.Image))
             else:
                layerFields.append(QgsField('ID', QVariant.String))
 
@@ -1387,7 +1408,7 @@ class BnicNancy:
         self.select_nearest_feature(point, button)
 
         self.dlgAttribut.show()
-
+        self.dlgAttribut.lineedit_attribut.setFocus()
 
         result = self.dlgAttribut.exec_()
         # See if OK was pressed
@@ -1499,7 +1520,7 @@ class BnicNancy:
         self.canvas.setMapTool(self.debordTool)
 
         self.dlgDebord.show()
-
+        self.dlgDebord.lineedit_debord.setFocus()
 
         result = self.dlgDebord.exec_()
         # See if OK was pressed
@@ -1682,6 +1703,39 @@ class BnicNancy:
                     widget.hide() #hide()
                 else:
                     widget.show()
+
+    #Prendre mesure laser metre
+    def mesure_laser(self):
+        self.dlgLaser.show()
+
+        result = self.dlgLaser.exec_()
+        if result:
+            try:
+                self.dist_laser=float(self.dlgLaser.label_dist_horiz.value())
+            except:
+                pass
+
+    def calcul_dist_horizon(self):
+
+        try:
+            data=self.dlgLaser.lineEdit_dist.value().split(";")
+            dist=float(data[0])
+            angle=float(data[1])
+            dist_horizon=dist*Maths.cos(angle)
+            self.dlgLaser.label_dist_horiz.setText(str(dist_horizon))
+        except:
+            self.iface.messageBar().pushMessage("Mauvais format de données",level=Qgis.Critical, duration=3)
+
+
+
+    #Selecte le texte d'une QLineEdit
+    def make_select_text(self, lineedit):
+        #necessary to call a function with parameters
+        def select_text():
+            lineedit.selectAll()
+
+        return select_text
+
 
     #Compute the highest point attribute
     def max_Point(self):
@@ -1875,10 +1929,13 @@ class BnicNancy:
         # show the dialog
         self.dlg.show()
 
+        #selecte premiere zone de saisie
+        self.dlg.lineedit_numin.setFocus()
+
         #remplit la zone de texte avec le point max
-        self.max_Point()
-        self.dlg.lineedit_numac.setReadOnly(True)
-        self.dlg.lineedit_numac.setText(str(self.pointmax))
+        # self.max_Point()
+        # self.dlg.lineedit_numac.setReadOnly(True)
+        # self.dlg.lineedit_numac.setText(str(self.pointmax))
 
 
         # Run the dialog event loop
