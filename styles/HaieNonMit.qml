@@ -21,7 +21,7 @@
           <prop v="MapUnit" k="offset_along_line_unit"/>
           <prop v="3x:0,0,0,0,0,0" k="offset_map_unit_scale"/>
           <prop v="MapUnit" k="offset_unit"/>
-          <prop v="centralpoint" k="placement"/>
+          <prop v="firstvertex" k="placement"/>
           <prop v="0" k="ring_filter"/>
           <prop v="1" k="rotate"/>
           <data_defined_properties>
@@ -33,12 +33,12 @@
           </data_defined_properties>
           <symbol force_rhr="0" clip_to_extent="1" alpha="1" name="@0@0" type="marker">
             <layer enabled="1" pass="0" locked="0" class="SimpleMarker">
-              <prop v="90" k="angle"/>
+              <prop v="0" k="angle"/>
               <prop v="255,0,0,255" k="color"/>
               <prop v="1" k="horizontal_anchor_point"/>
               <prop v="bevel" k="joinstyle"/>
-              <prop v="line" k="name"/>
-              <prop v="0.40000000000000002,0" k="offset"/>
+              <prop v="cross2" k="name"/>
+              <prop v="0,0" k="offset"/>
               <prop v="3x:0,0,0,0,0,0" k="offset_map_unit_scale"/>
               <prop v="MapUnit" k="offset_unit"/>
               <prop v="145,22,114,255" k="outline_color"/>
@@ -50,34 +50,7 @@
               <prop v="0.7" k="size"/>
               <prop v="3x:0,0,0,0,0,0" k="size_map_unit_scale"/>
               <prop v="MapUnit" k="size_unit"/>
-              <prop v="1" k="vertical_anchor_point"/>
-              <data_defined_properties>
-                <Option type="Map">
-                  <Option name="name" value="" type="QString"/>
-                  <Option name="properties"/>
-                  <Option name="type" value="collection" type="QString"/>
-                </Option>
-              </data_defined_properties>
-            </layer>
-            <layer enabled="1" pass="0" locked="0" class="SimpleMarker">
-              <prop v="90" k="angle"/>
-              <prop v="255,0,0,255" k="color"/>
-              <prop v="1" k="horizontal_anchor_point"/>
-              <prop v="bevel" k="joinstyle"/>
-              <prop v="line" k="name"/>
-              <prop v="-0.40000000000000002,0" k="offset"/>
-              <prop v="3x:0,0,0,0,0,0" k="offset_map_unit_scale"/>
-              <prop v="MapUnit" k="offset_unit"/>
-              <prop v="145,22,114,255" k="outline_color"/>
-              <prop v="solid" k="outline_style"/>
-              <prop v="0.1" k="outline_width"/>
-              <prop v="3x:0,0,0,0,0,0" k="outline_width_map_unit_scale"/>
-              <prop v="MapUnit" k="outline_width_unit"/>
-              <prop v="diameter" k="scale_method"/>
-              <prop v="0.7" k="size"/>
-              <prop v="3x:0,0,0,0,0,0" k="size_map_unit_scale"/>
-              <prop v="MapUnit" k="size_unit"/>
-              <prop v="1" k="vertical_anchor_point"/>
+              <prop v="0" k="vertical_anchor_point"/>
               <data_defined_properties>
                 <Option type="Map">
                   <Option name="name" value="" type="QString"/>
@@ -102,7 +75,7 @@
   <featureBlendMode>0</featureBlendMode>
   <layerOpacity>1</layerOpacity>
   <SingleCategoryDiagramRenderer diagramType="Histogram" attributeLegend="1">
-    <DiagramCategory backgroundColor="#ffffff" width="15" penWidth="0" lineSizeScale="3x:0,0,0,0,0,0" height="15" spacing="0" penAlpha="255" penColor="#000000" diagramOrientation="Up" maxScaleDenominator="1e+08" sizeScale="3x:0,0,0,0,0,0" showAxis="0" enabled="0" scaleBasedVisibility="0" minScaleDenominator="0" rotationOffset="270" opacity="1" minimumSize="0" lineSizeType="MM" labelPlacementMethod="XHeight" barWidth="5" scaleDependency="Area" spacingUnitScale="3x:0,0,0,0,0,0" sizeType="MM" direction="1" backgroundAlpha="255" spacingUnit="MM">
+    <DiagramCategory backgroundColor="#ffffff" width="15" penWidth="0" lineSizeScale="3x:0,0,0,0,0,0" height="15" spacing="5" penAlpha="255" penColor="#000000" diagramOrientation="Up" maxScaleDenominator="1e+08" sizeScale="3x:0,0,0,0,0,0" showAxis="1" enabled="0" scaleBasedVisibility="0" minScaleDenominator="0" rotationOffset="270" opacity="1" minimumSize="0" lineSizeType="MM" labelPlacementMethod="XHeight" barWidth="5" scaleDependency="Area" spacingUnitScale="3x:0,0,0,0,0,0" sizeType="MM" direction="0" backgroundAlpha="255" spacingUnit="MM">
       <fontProperties description="MS Shell Dlg 2,8.25,-1,5,50,0,0,0,0,0" style=""/>
       <attribute color="#000000" field="" label=""/>
       <axisSymbol>
@@ -152,27 +125,30 @@
   <referencedLayers/>
   <referencingLayers/>
   <fieldConfiguration>
-    <field name="ID">
+    <field name="id">
       <editWidget type="TextEdit">
         <config>
-          <Option/>
+          <Option type="Map">
+            <Option name="IsMultiline" value="false" type="bool"/>
+            <Option name="UseHtml" value="false" type="bool"/>
+          </Option>
         </config>
       </editWidget>
     </field>
   </fieldConfiguration>
   <aliases>
-    <alias index="0" field="ID" name=""/>
+    <alias index="0" field="id" name=""/>
   </aliases>
   <excludeAttributesWMS/>
   <excludeAttributesWFS/>
   <defaults>
-    <default field="ID" expression="" applyOnUpdate="0"/>
+    <default field="id" expression="" applyOnUpdate="0"/>
   </defaults>
   <constraints>
-    <constraint notnull_strength="0" constraints="0" field="ID" unique_strength="0" exp_strength="0"/>
+    <constraint notnull_strength="0" constraints="0" field="id" unique_strength="0" exp_strength="0"/>
   </constraints>
   <constraintExpressions>
-    <constraint desc="" exp="" field="ID"/>
+    <constraint desc="" exp="" field="id"/>
   </constraintExpressions>
   <expressionfields/>
   <attributeactions>
@@ -180,8 +156,8 @@
   </attributeactions>
   <attributetableconfig sortOrder="0" actionWidgetStyle="dropDown" sortExpression="">
     <columns>
+      <column width="-1" hidden="0" name="id" type="field"/>
       <column width="-1" hidden="1" type="actions"/>
-      <column width="-1" hidden="0" name="ID" type="field"/>
     </columns>
   </attributetableconfig>
   <conditionalstyles>
@@ -207,21 +183,18 @@ from qgis.PyQt.QtWidgets import QWidget
 def my_form_open(dialog, layer, feature):
     geom = feature.geometry()
     control = dialog.findChild(QWidget, "MyLineEdit")
+
 ]]></editforminitcode>
   <featformsuppress>1</featformsuppress>
   <editorlayout>generatedlayout</editorlayout>
   <editable>
-    <field editable="1" name="ID"/>
-    <field editable="1" name="epaisseur"/>
     <field editable="1" name="id"/>
   </editable>
   <labelOnTop>
-    <field labelOnTop="0" name="ID"/>
-    <field labelOnTop="0" name="epaisseur"/>
     <field labelOnTop="0" name="id"/>
   </labelOnTop>
   <widgets/>
-  <previewExpression>epaisseur</previewExpression>
+  <previewExpression>"id"</previewExpression>
   <mapTip></mapTip>
   <layerGeometryType>1</layerGeometryType>
 </qgis>

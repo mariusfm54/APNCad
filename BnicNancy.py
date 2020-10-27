@@ -60,6 +60,7 @@ from .ChoisirDebord_dialog import ChoisirDebordDialog
 from .ClavierNum_dialog import ClavierNumDialog
 from .Crs_dialog import CrsDialog
 from .Laserm_dialog import LasermDialog
+from .RechercheParc_dialog import RechercheParcDialog
 
 import os.path
 import sys
@@ -100,7 +101,7 @@ class BnicNancy:
         # self.menu = self.tr(u'&BnicNancy')
         self.menu = QMenu(self.iface.mainWindow())
         self.menu.setObjectName("bnMenu")
-        self.menu.setTitle("BnicNancy")
+        self.menu.setTitle("Préparation Delim")
         self.iface.mainWindow().menuBar().insertMenu(self.iface.firstRightStandardMenu().menuAction(),self.menu)
 
         #menu SCR
@@ -314,8 +315,9 @@ class BnicNancy:
 
         #Fenetre entrer attribut (cote, modifier)
         self.dlgAttribut = EntrerAttributDialog()
-        self.dlgAttribut.setFixedSize(425, 109)
+        self.dlgAttribut.setFixedSize(425, 132)
         self.dlgAttribut.pushButton_clavier.clicked.connect(self.make_clavier_num(self.dlgAttribut.lineedit_attribut))
+        self.dlgAttribut.pushButton_laser.clicked.connect(self.mesure_laser)
 
         #Fenetre parametres point
         self.dlg = BnicNancyDialog()
@@ -341,14 +343,21 @@ class BnicNancy:
         self.iface.actionSaveProjectAs().triggered.connect(self.set_crs_on_top)
 
         #Liste des couches, de leur type et leur groupe
-        self.listLayers = [("debordT","Point","Symbole"),("borne","Point","Symbole"),("cloture","Point","Symbole"),("murmitoyen","Ligne","Symbole"),("murnonmi","Ligne","Symbole"),("borne_retrouvee","Point","Symbole"),   ("biffer","Ligne","Symbole"),("MurDroite","Ligne","Dessin"),("Point","Point","Dessin"),("Texte","Point","Dessin"),("TexteOriente","Ligne","Dessin"),("MurMilieu","Ligne","Dessin"),("coteSURLigne","Ligne","Dessin"),("LigneDiscontinue","Ligne","Dessin"),("LigneContinue","Ligne","Dessin"),("cotesansligne","Ligne","Dessin"),("polygone","Polygone","Dessin"),("image","Point","Autre")]
+        self.listLayers = [("debordT","Point","Symbole"),("borne","Point","Symbole"),("clotureMit","Point","Symbole"),("murmitoyen","Ligne","Symbole"),("murnonmi","Ligne","Symbole"),("borne_retrouvee","Point","Symbole"),   ("biffer","Ligne","Symbole"),("MurDroite","Ligne","Dessin"),("Point","Point","Dessin"),("Texte","Point","Dessin"),("TexteOriente","Ligne","Dessin"),("MurMilieu","Ligne","Dessin"),("coteSURLigne","Ligne","Dessin"),("LigneDiscontinue","Ligne","Dessin"),("LigneContinue","Ligne","Dessin"),("cotesansligne","Ligne","Dessin"),("polygone","Polygone","Dessin"),("image","Point","Autre"),("HaieNonMit","Ligne","Symbole"),("Haiemit","Ligne","Symbole"),("Fossenonmit","Ligne","Symbole"),("FosseMit","Ligne","Symbole"),("Cloturenonmit","Ligne","Symbole"),("BornePolygo","Point","Symbole"),("clou","Point","Symbole"),("clouLimite","Ligne","Symbole"),]
+
 
         #Fenetre mesure laser metre
         self.dist_laser=0
         self.dlgLaser = LasermDialog()
-        self.dlgLaser.setFixedSize(453,165)
-        self.dlgLaser.lineEdit_dist.textChanged.connect(self.make_select_text(self.dlgLaser.lineEdit_dist))
+        self.dlgLaser.setFixedSize(632,178)
+        self.dlgLaser.lineEdit_dist_horiz.setReadOnly(True)
+        # self.dlgLaser.lineEdit_dist_horiz.textChanged.connect(self.make_select_text(self.dlgLaser.lineEdit_dist))
         self.dlgLaser.lineEdit_dist.textChanged.connect(self.calcul_dist_horizon)
+
+        #Fenetre recherche parcelle
+        self.dlgParc = RechercheParcDialog()
+        self.dlgParc.setFixedSize(463,179)
+        self.dlgParc.pushButton_clavierNum.clicked.connect(self.make_clavier_num(self.dlgParc.LineEdit_parc))
 
         #Outils
         #Tracer point
@@ -369,6 +378,9 @@ class BnicNancy:
 
         #tracer arc (3 pts)
         self.arcTool = SnappingMapToolEmitPoint(self.canvas)
+
+        #tracer entite ponctuelle (1 pt)
+        self.punctualTool = SnappingMapToolEmitPoint(self.canvas)
 
         #tracer debord
         self.debordTool = SnappingMapToolEmitPoint(self.canvas)
@@ -493,9 +505,9 @@ class BnicNancy:
         self.id_tracer_point=len(self.actions)-1
 
         #configurer les points
-        icon_path2 = ':/plugins/BnicNancy/icon2.png'
+        icon_path = ':/plugins/BnicNancy/icon2.png'
         self.add_action(
-            icon_path2,
+            icon_path,
             text=self.tr(u'Configurer points'),
             callback=self.run,
             parent=self.iface.mainWindow())
@@ -510,9 +522,9 @@ class BnicNancy:
 
 
         #Bouton delete object
-        icon_path5=':/plugins/BnicNancy/icon9.png'
+        icon_path=':/plugins/BnicNancy/icon9.png'
         self.add_action(
-            icon_path5,
+            icon_path,
             text=self.tr('Supprimer des entités'),
             callback=self.set_delete_tool,
             toolbar=self.toolbar,
@@ -520,9 +532,9 @@ class BnicNancy:
             parent=self.iface.mainWindow())
 
         #Bouton modif object attribute
-        icon_path6=':/plugins/BnicNancy/icon10.png'
+        icon_path=':/plugins/BnicNancy/icon10.png'
         self.add_action(
-            icon_path6,
+            icon_path,
             text=self.tr("Modifier l'attribut d'une entité"),
             callback=self.set_modif_tool,
             toolbar=self.toolbar,
@@ -531,9 +543,9 @@ class BnicNancy:
 
 
         #bouton sauvegarder toutes les couches
-        icon_path3=':/plugins/BnicNancy/icon3.png'
+        icon_path=':/plugins/BnicNancy/icon3.png'
         self.add_action(
-            icon_path3,
+            icon_path,
             text=self.tr('Sauvegarde les couches en mode édition'),
             callback=self.save_layers,
             toolbar=self.toolbar,
@@ -542,9 +554,9 @@ class BnicNancy:
 
 
         #bouton annuler dernier point
-        icon_path4=':/plugins/BnicNancy/icon7.png'
+        icon_path=':/plugins/BnicNancy/icon7.png'
         self.add_action(
-            icon_path4,
+            icon_path,
             text=self.tr('Annuler'),
             callback=self.cancel,
             toolbar=self.pointToolbar,
@@ -554,9 +566,9 @@ class BnicNancy:
         self.id_cancel=len(self.actions)-1
 
         #bouton coteSurLigne
-        icon_path7=':/plugins/BnicNancy/icon12.png'
+        icon_path=':/plugins/BnicNancy/icon12.png'
         self.add_action(
-            icon_path7,
+            icon_path,
             text=self.tr('Tracer une cote sur ligne'),
             callback=self.set_coteSurLigne_tool,
             parent=self.iface.mainWindow())
@@ -564,9 +576,9 @@ class BnicNancy:
         self.id_coteSurLigne=len(self.actions)-1
 
         #bouton coteSansLigne
-        icon_path8=':/plugins/BnicNancy/icon11.png'
+        icon_path=':/plugins/BnicNancy/icon11.png'
         self.add_action(
-            icon_path8,
+            icon_path,
             text=self.tr('Tracer une cote sans ligne'),
             callback=self.set_coteSansLigne_tool,
             parent=self.iface.mainWindow())
@@ -574,9 +586,9 @@ class BnicNancy:
         self.id_coteSansLigne=len(self.actions)-1
 
         #bouton cote courbe
-        icon_path9=':/plugins/BnicNancy/icon13.png'
+        icon_path=':/plugins/BnicNancy/icon13.png'
         self.add_action(
-            icon_path9,
+            icon_path,
             text=self.tr('Tracer une cote courbe'),
             callback=self.set_coteCourbe_tool,
             parent=self.iface.mainWindow())
@@ -592,9 +604,9 @@ class BnicNancy:
         boutonMenuCote.addAction(self.actions[self.id_coteCourbe])
 
         #bouton ligne continue
-        icon_path10=':/plugins/BnicNancy/icon14.png'
+        icon_path=':/plugins/BnicNancy/icon14.png'
         self.add_action(
-            icon_path10,
+            icon_path,
             text=self.tr('Tracer une ligne continue'),
             callback=self.set_ligneContinue_tool,
             parent=self.iface.mainWindow())
@@ -602,9 +614,9 @@ class BnicNancy:
         self.id_ligneContinue=len(self.actions)-1
 
         #bouton ligne discontinue
-        icon_path11=':/plugins/BnicNancy/icon15.png'
+        icon_path=':/plugins/BnicNancy/icon15.png'
         self.add_action(
-            icon_path11,
+            icon_path,
             text=self.tr('Tracer une ligne discontinue'),
             callback=self.set_ligneDiscontinue_tool,
             parent=self.iface.mainWindow())
@@ -619,9 +631,9 @@ class BnicNancy:
         boutonMenuLigne.addAction(self.actions[self.id_ligneDiscontinue])
 
         #bouton Mur Droite
-        icon_path12=':/plugins/BnicNancy/icon16.png'
+        icon_path=':/plugins/BnicNancy/icon16.png'
         self.add_action(
-            icon_path12,
+            icon_path,
             text=self.tr('Tracer un mur à droite'),
             callback=self.set_murDroite_tool,
             parent=self.iface.mainWindow())
@@ -629,9 +641,9 @@ class BnicNancy:
         self.id_murDroite=len(self.actions)-1
 
         #bouton Mur Milieu
-        icon_path13=':/plugins/BnicNancy/icon17.png'
+        icon_path=':/plugins/BnicNancy/icon17.png'
         self.add_action(
-            icon_path13,
+            icon_path,
             text=self.tr('Tracer un mur au milieu'),
             callback=self.set_murMilieu_tool,
             parent=self.iface.mainWindow())
@@ -645,19 +657,19 @@ class BnicNancy:
         boutonMenuMur.addAction(self.actions[self.id_murMilieu])
 
         #bouton Texte
-        icon_path14=':/plugins/BnicNancy/icon18.png'
+        icon_path=':/plugins/BnicNancy/icon18.png'
         self.add_action(
-            icon_path14,
+            icon_path,
             text=self.tr('Tracer un texte'),
             callback=self.set_Texte_tool,
             parent=self.iface.mainWindow())
 
         self.id_texte=len(self.actions)-1
 
-        #bouton TexteOrienté
-        icon_path15=':/plugins/BnicNancy/icon19.png'
+        #bouton TexteOriente
+        icon_path=':/plugins/BnicNancy/icon19.png'
         self.add_action(
-            icon_path15,
+            icon_path,
             text=self.tr('Tracer un texte orienté'),
             callback=self.set_texteOriente_tool,
             parent=self.iface.mainWindow())
@@ -672,9 +684,9 @@ class BnicNancy:
 
 
         #bouton Debord de toit
-        icon_path16=':/plugins/BnicNancy/icon20.png'
+        icon_path=':/plugins/BnicNancy/icon20.png'
         self.add_action(
-            icon_path16,
+            icon_path,
             text=self.tr('Tracer un débord de toit'),
             callback=self.set_debord_tool,
             toolbar=self.symboleToolbar,
@@ -685,9 +697,9 @@ class BnicNancy:
 
 
         #bouton borne
-        icon_path17=':/plugins/BnicNancy/icon21.png'
+        icon_path=':/plugins/BnicNancy/icon21.png'
         self.add_action(
-            icon_path17,
+            icon_path,
             text=self.tr('Tracer une borne'),
             callback=self.set_borne_tool,
             parent=self.iface.mainWindow())
@@ -695,9 +707,9 @@ class BnicNancy:
         self.id_borne=len(self.actions)-1
 
         #bouton borne retrouvee
-        icon_path18=':/plugins/BnicNancy/icon22.png'
+        icon_path=':/plugins/BnicNancy/icon22.png'
         self.add_action(
-            icon_path18,
+            icon_path,
             text=self.tr('Tracer une borne retrouvée'),
             callback=self.set_borneRetrouvee_tool,
             parent=self.iface.mainWindow())
@@ -711,10 +723,11 @@ class BnicNancy:
         boutonMenuBorne.addAction(self.actions[self.id_borneRetrouvee])
 
 
+
         #bouton mur mitoyen
-        icon_path19=':/plugins/BnicNancy/icon23.png'
+        icon_path=':/plugins/BnicNancy/icon23.png'
         self.add_action(
-            icon_path19,
+            icon_path,
             text=self.tr('Tracer un mur mitoyen'),
             callback=self.set_murMitoyen_tool,
             parent=self.iface.mainWindow())
@@ -722,24 +735,14 @@ class BnicNancy:
         self.id_murMitoyen=len(self.actions)-1
 
         #bouton mur non mitoyen
-        icon_path20=':/plugins/BnicNancy/icon24.png'
+        icon_path=':/plugins/BnicNancy/icon24.png'
         self.add_action(
-            icon_path20,
+            icon_path,
             text=self.tr('Tracer un mur NON mitoyen'),
             callback=self.set_murNonMitoyen_tool,
             parent=self.iface.mainWindow())
 
         self.id_murNonMitoyen=len(self.actions)-1
-
-        #bouton cloture
-        icon_path21=':/plugins/BnicNancy/icon25.png'
-        self.add_action(
-            icon_path21,
-            text=self.tr('Tracer une clôture'),
-            callback=self.set_cloture_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_cloture=len(self.actions)-1
 
 
         #Bouton deroulant mur (symbole)
@@ -747,13 +750,26 @@ class BnicNancy:
         boutonMenuMurMit.addAction(self.actions[self.id_murMitoyen])
         self.murMitButton.setDefaultAction(self.actions[self.id_murMitoyen])   #action par default du bouton
         boutonMenuMurMit.addAction(self.actions[self.id_murNonMitoyen])
-        boutonMenuMurMit.addAction(self.actions[self.id_cloture])
+
+        #cloture mit
+        icon_path=':/plugins/BnicNancy/icon25.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Tracer une clôture mitoyenne'),
+            callback=self.set_clotureMitoyen_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_clotureMit=len(self.actions)-1
+
+        #Ajout bouton deroulant
+        boutonMenuMurMit.addAction(self.actions[self.id_clotureMit])
+
 
 
         #bouton biffer
-        icon_path22=':/plugins/BnicNancy/icon26.png'
+        icon_path=':/plugins/BnicNancy/icon26.png'
         self.add_action(
-            icon_path22,
+            icon_path,
             text=self.tr('Tracer un biffer'),
             callback=self.set_biffer_tool,
             toolbar=self.symboleToolbar,
@@ -763,9 +779,9 @@ class BnicNancy:
         self.id_biffer=len(self.actions)-1
 
         #bouton image
-        icon_path23=':/plugins/BnicNancy/icon27.png'
+        icon_path=':/plugins/BnicNancy/icon27.png'
         self.add_action(
-            icon_path23,
+            icon_path,
             text=self.tr('Placer une image'),
             callback=self.set_image_tool,
             toolbar=self.symboleToolbar,
@@ -776,9 +792,9 @@ class BnicNancy:
 
 
         #bouton afficher panneau couche
-        icon_path24=':/plugins/BnicNancy/icon28.png'
+        icon_path=':/plugins/BnicNancy/icon28.png'
         self.add_action(
-            icon_path24,
+            icon_path,
             text=self.tr('Ouvrir/Fermer le panneau Couches'),
             callback=self.panneau_couche,
             parent=self.iface.mainWindow())
@@ -786,9 +802,9 @@ class BnicNancy:
         self.id_panneauCouche=len(self.actions)-1
 
         #bouton identifier couche
-        icon_path25=':/plugins/BnicNancy/icon29.png'
+        icon_path=':/plugins/BnicNancy/icon29.png'
         self.add_action(
-            icon_path25,
+            icon_path,
             text=self.tr("Identifier la couche d'un objet"),
             callback=self.set_identifyLayer_tool,
             parent=self.iface.mainWindow())
@@ -802,9 +818,9 @@ class BnicNancy:
         boutonMenuCouche.addAction(self.actions[self.id_identifyLayer])
 
         #bouton image
-        icon_path26=':/plugins/BnicNancy/icon30.png'
+        icon_path=':/plugins/BnicNancy/icon30.png'
         self.add_action(
-            icon_path26,
+            icon_path,
             text=self.tr('Tracer un polygone'),
             callback=self.set_polygone_tool,
             toolbar=self.symboleToolbar,
@@ -814,9 +830,9 @@ class BnicNancy:
         self.id_polygone=len(self.actions)-1
 
         #translater feature
-        icon_path27 = ':/plugins/BnicNancy/icon31.png'
+        icon_path= ':/plugins/BnicNancy/icon31.png'
         self.add_action(
-            icon_path27,
+            icon_path,
             text=self.tr("Déplacer l'entité"),
             callback=self.set_translation_tool,
             parent=self.iface.mainWindow())
@@ -824,9 +840,9 @@ class BnicNancy:
         self.id_translater_feat=len(self.actions)-1
 
         #copier translater feature
-        icon_path28 = ':/plugins/BnicNancy/icon32.png'
+        icon_path = ':/plugins/BnicNancy/icon32.png'
         self.add_action(
-            icon_path28,
+            icon_path,
             text=self.tr('Copier et déplacer les entités'),
             callback=self.set_copy_tool,
             parent=self.iface.mainWindow())
@@ -842,9 +858,9 @@ class BnicNancy:
 
 
         #action generer couche pour nouveau projet (menu uniquement)
-        icon_path29=':/plugins/BnicNancy/icon33.png'
+        icon_path=':/plugins/BnicNancy/icon33.png'
         self.add_action(
-            icon_path29,
+            icon_path,
             text=self.tr('Générer les couches'),
             callback=self.generate_layers,
             menu=self.menu,
@@ -855,9 +871,9 @@ class BnicNancy:
 
 
         #choix SCR et enregistrer sous
-        icon_path30=':/plugins/BnicNancy/icon34.png'
+        icon_path=':/plugins/BnicNancy/icon34.png'
         self.add_action(
-            icon_path30,
+            icon_path,
             text=self.tr('Choisir un SCR'),
             callback=self.set_crs,
             menu=self.menu_scr,
@@ -867,17 +883,146 @@ class BnicNancy:
 
         self.id_set_crs=len(self.actions)-1
 
-        #bouton laser metre
-        icon_path31=':/plugins/BnicNancy/icon35.png'
+
+
+        #cloture non mit
+        icon_path = ':/plugins/BnicNancy/icon35.png'
         self.add_action(
-            icon_path31,
-            text=self.tr('Prendre mesure au lasermètre'),
-            callback=self.mesure_laser,
+            icon_path,
+            text=self.tr('Tracer une clôture NON mitoyenne'),
+            callback=self.set_clotureNonMitoyen_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_clotureNonMit=len(self.actions)-1
+
+        #ajout au Bouton deroulant
+        boutonMenuMurMit.addAction(self.actions[self.id_clotureNonMit])
+
+
+
+
+        #haie mit
+        icon_path = ':/plugins/BnicNancy/icon36.png'
+        self.add_action(
+            icon_path,
+            text=self.tr("Tracer une haie mitoyenne"),
+            callback=self.set_haieMitoyen_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_haieMit=len(self.actions)-1
+
+        #haie non mit
+        icon_path = ':/plugins/BnicNancy/icon37.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Tracer une haie NON mitoyenne'),
+            callback=self.set_haieNonMitoyen_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_haieNonMit=len(self.actions)-1
+
+        #Ajout menu deroulant
+        boutonMenuMurMit.addAction(self.actions[self.id_haieMit])
+        boutonMenuMurMit.addAction(self.actions[self.id_haieNonMit])
+
+
+
+
+        #fosse mit
+        icon_path = ':/plugins/BnicNancy/icon38.png'
+        self.add_action(
+            icon_path,
+            text=self.tr("Tracer un fossé mitoyen"),
+            callback=self.set_fosseMitoyen_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_fosseMit=len(self.actions)-1
+
+        #fosse non mit
+        icon_path = ':/plugins/BnicNancy/icon39.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Tracer un fossé NON mitoyen'),
+            callback=self.set_fosseNonMitoyen_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_fosseNonMit=len(self.actions)-1
+
+        #Ajout menu deroulant
+        boutonMenuMurMit.addAction(self.actions[self.id_fosseMit])
+        boutonMenuMurMit.addAction(self.actions[self.id_fosseNonMit])
+
+
+
+
+        #bouton borne polygone
+        icon_path=':/plugins/BnicNancy/icon40.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Tracer une borne polygone'),
+            callback=self.set_bornePolygo_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_bornePolygo=len(self.actions)-1
+
+        #Ajout menu deroulant
+        boutonMenuBorne.addAction(self.actions[self.id_bornePolygo])
+
+
+
+        #clou
+        icon_path=':/plugins/BnicNancy/icon41.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Tracer un clou'),
+            callback=self.set_clou_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_clou=len(self.actions)-1
+
+        #clou Limite
+        icon_path = ':/plugins/BnicNancy/icon42.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Tracer un clou limite'),
+            callback=self.set_clouLimite_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_clouLimite=len(self.actions)-1
+
+        #Bouton deroulant clou
+        boutonMenuBorne.addAction(self.actions[self.id_clou])
+        boutonMenuBorne.addAction(self.actions[self.id_clouLimite])
+
+
+
+        #bouton rechercher parcelle
+        icon_path=':/plugins/BnicNancy/icon43.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Rechercher une parcelle'),
+            callback=self.rechercher_parc,
             toolbar=self.toolbar,
             add_to_toolbar=True,
             parent=self.iface.mainWindow())
 
-        self.id_laser=len(self.actions)-1
+        self.id_rechercherParc=len(self.actions)-1
+
+
+
+        #action generer couche pour nouveau projet (menu uniquement)
+        icon_path=':/plugins/BnicNancy/icon44.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Reconstruire le projet'),
+            callback=self.build_project,
+            menu=self.menu,
+            enabled_flag=True,
+            add_to_menu=True,
+            parent=self.iface.mainWindow())
+
+        self.id_build_project=len(self.actions)-1
+
 
         # will be set False in run()
         self.first_start = True
@@ -890,6 +1035,8 @@ class BnicNancy:
         self.deleteTool.canvasClicked.connect(self.delete_object)
 
         self.segmentTool.snapClicked.connect(self.display_segment)
+
+        self.punctualTool.snapClicked.connect(self.display_punctual)
 
         self.arcTool.snapClicked.connect(self.display_cote_courbe)
 
@@ -965,9 +1112,9 @@ class BnicNancy:
         root = QgsProject.instance().layerTreeRoot()
         cad_dessin = root.addGroup("Cad_Dessin")    #groupe principal
 
-        symbole=cad_dessin.addGroup("Symbole")
+        symbole=cad_dessin.addGroup("Symboles")
         dessin=cad_dessin.addGroup("Dessin")
-        autre=cad_dessin.addGroup("Autre")
+        autre=cad_dessin.addGroup("Autres")
 
 
         print("crs: ",crs)
@@ -1045,6 +1192,102 @@ class BnicNancy:
         self.start_function()
 
 
+    #Completer un projet existant avec des nouvelles couches
+    def build_project(self):
+
+        #crs du projet
+        crs=QgsProject.instance().crs().authid()
+
+        #repertoire projet
+        pathProj=QFileInfo(QgsProject.instance().fileName()).absolutePath()
+
+        #recuperation des groupes
+        root = QgsProject.instance().layerTreeRoot()
+        cad_dessin = root.findGroup("Cad_Dessin")    #groupe principal
+        symbole=cad_dessin.findGroup("Symboles")
+        dessin=cad_dessin.findGroup("Dessin")
+        autre=cad_dessin.findGroup("Autres")
+
+        #nombre de couches ajoutees
+        compteur=0
+
+        for couche in self.listLayers:
+
+            #si la couche n'existe pas
+            if len(QgsProject.instance().mapLayersByName(couche[0]))==0:
+
+                compteur+=1
+
+                #Repertoire fichiers couche
+                fn=pathProj+"/"+couche[0]+".shp"
+
+                # create fields
+                layerFields = QgsFields()
+
+                #type de l'ID (int pour Point uniquement)
+                if couche[0]=="Point":
+                    layerFields.append(QgsField('ID', QVariant.Int))
+                # elif couche[0]=="image":
+                #     layerFields.append(QgsField('ID', QVariant.Image))
+                else:
+                    layerFields.append(QgsField('ID', QVariant.String))
+
+                #Creation des couches et d'un premier feature (obligatoire pour pouvoir ajouter des entites)
+                if couche[1]=="Point":
+                    writer = QgsVectorFileWriter(fn, 'System', layerFields, QgsWkbTypes.Point, QgsCoordinateReferenceSystem(crs), 'ESRI Shapefile')
+                    feat = QgsFeature()
+                    feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(0, 0)))
+
+                if couche[1]=="Ligne":
+                    writer = QgsVectorFileWriter(fn, 'System', layerFields, QgsWkbTypes.LineString, QgsCoordinateReferenceSystem(crs), 'ESRI Shapefile')
+                    feat = QgsFeature()
+                    feat.setGeometry(QgsGeometry.fromPolyline([QgsPoint(0,0), QgsPoint(1,1)]))
+
+                if couche[1]=="Polygone":
+                    writer = QgsVectorFileWriter(fn, 'System', layerFields, QgsWkbTypes.Polygon, QgsCoordinateReferenceSystem(crs), 'ESRI Shapefile')
+                    feat = QgsFeature()
+                    feat.setGeometry(QgsGeometry.fromPolygonXY([[QgsPointXY(0,0), QgsPointXY(1,1), QgsPointXY(2,2)]]))
+
+
+                feat.setAttributes([1])
+                writer.addFeature(feat)
+                layer = self.iface.addVectorLayer(fn, '', 'ogr')
+                del(writer)
+
+                #On supprime l'entite fictive ajoutee
+                layer.dataProvider().deleteFeatures([0])
+
+                #On charge les styles
+                success=layer.loadNamedStyle(self.plugin_dir+'/styles/'+couche[0]+'.qml')
+                if not success[1]:
+                    self.iface.messageBar().pushMessage("Impossible de charger le style de la couche: "+couche[0],level=Qgis.Critical, duration=3)
+
+                #ajout dans un groupe
+                root = QgsProject.instance().layerTreeRoot()
+                layerT = root.findLayer(layer.id())
+                clone=layerT.clone()
+                parent=layerT.parent()
+
+                if couche[2]=="Symbole":
+                    #ajout au groupe
+                    symbole.insertChildNode(0, QgsLayerTreeLayer(layer))
+
+                if couche[2]=="Dessin":
+                    #ajout au groupe
+                    dessin.insertChildNode(0, QgsLayerTreeLayer(layer))
+
+                if couche[2]=="Autre":
+                    #ajout au groupe
+                    autre.insertChildNode(0, QgsLayerTreeLayer(layer))
+
+                #suppression de la couche initiale
+                parent.removeChildNode(layerT)
+
+        #enable tools
+        self.start_function()
+        self.iface.messageBar().pushMessage("La reconstruction a généré : "+str(compteur)+" couches",level=Qgis.Info, duration=4)
+
+
 
 
     #Bouton start
@@ -1082,9 +1325,14 @@ class BnicNancy:
             self.iface.messageBar().pushMessage("La couche borne n'existe pas",level=Qgis.Critical, duration=3)
 
         try:
-            self.layerCloture=QgsProject.instance().mapLayersByName("cloture")[0]
+            self.layerClotureMit=QgsProject.instance().mapLayersByName("clotureMit")[0]
         except:
-            self.iface.messageBar().pushMessage("La couche cloture n'existe pas",level=Qgis.Critical, duration=3)
+            self.iface.messageBar().pushMessage("La couche clotureMit n'existe pas",level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerClotureNonMit=QgsProject.instance().mapLayersByName("Cloturenonmit")[0]
+        except:
+            self.iface.messageBar().pushMessage("La couche Cloturenonmit n'existe pas",level=Qgis.Critical, duration=3)
 
         try:
             self.layerMurMitoyen=QgsProject.instance().mapLayersByName("murmitoyen")[0]
@@ -1141,6 +1389,40 @@ class BnicNancy:
         except:
             self.iface.messageBar().pushMessage("La couche polygone n'existe pas",level=Qgis.Critical, duration=3)
 
+        try:
+            self.layerHaieMit=QgsProject.instance().mapLayersByName("Haiemit")[0]
+        except:
+            self.iface.messageBar().pushMessage("La couche Haiemit n'existe pas",level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerHaieNonMit=QgsProject.instance().mapLayersByName("HaieNonMit")[0]
+        except:
+            self.iface.messageBar().pushMessage("La couche HaieNonMit n'existe pas",level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerFosseMit=QgsProject.instance().mapLayersByName("FosseMit")[0]
+        except:
+            self.iface.messageBar().pushMessage("La couche FosseMit n'existe pas",level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerFosseNonMit=QgsProject.instance().mapLayersByName("Fossenonmit")[0]
+        except:
+            self.iface.messageBar().pushMessage("La couche Fossenonmit n'existe pas",level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerClou=QgsProject.instance().mapLayersByName("clou")[0]
+        except:
+            self.iface.messageBar().pushMessage("La couche clou n'existe pas",level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerClouLimite=QgsProject.instance().mapLayersByName("clouLimite")[0]
+        except:
+            self.iface.messageBar().pushMessage("La couche clouLimite n'existe pas",level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerBornePolygo=QgsProject.instance().mapLayersByName("BornePolygo")[0]
+        except:
+            self.iface.messageBar().pushMessage("La couche BornePolygo n'existe pas",level=Qgis.Critical, duration=3)
 
         self.currentLayer=self.iface.activeLayer()
 
@@ -1236,6 +1518,42 @@ class BnicNancy:
         self.attribut = True
         self.canvas.setMapTool(self.segmentTool)
 
+    def display_punctual(self, point, button):
+
+        feat = QgsFeature()
+        feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(point.x(),point.y())))
+        self.currentLayer.dataProvider().addFeatures([feat])    #ajout du point sur le dessin #ne permet pas ctrl z
+
+        self.currentLayer.commitChanges()
+
+        if self.attribut:
+            for feature in self.currentLayer.getFeatures():
+                ft=feature
+
+            #fenetre entrer cote
+            self.dlgAttribut.show()
+            self.dlgAttribut.lineedit_attribut.setFocus()
+
+            result = self.dlgAttribut.exec_()
+            # See if OK was pressed
+            if result:
+                try:
+                    newValue=self.dlgAttribut.lineedit_attribut.value()
+                    print(newValue)
+
+                    attrs = {0 : newValue}
+                    self.currentLayer.dataProvider().changeAttributeValues({ ft.id() : attrs })
+                    self.refresh_layer(self.currentLayer)
+                    self.dlgAttribut.lineedit_attribut.clearValue()
+
+                except:
+                    pass
+            else:
+                self.currentLayer.dataProvider().deleteFeatures([ft.id()])
+                self.refresh_layer(self.currentLayer)
+
+
+
     def display_segment(self, point, button):
 
         #1er point
@@ -1259,6 +1577,7 @@ class BnicNancy:
 
                 #fenetre entrer cote
                 self.dlgAttribut.show()
+                self.dlgAttribut.lineedit_attribut.setFocus()
 
 
                 result = self.dlgAttribut.exec_()
@@ -1326,7 +1645,7 @@ class BnicNancy:
 
             #fenetre entrer cote
             self.dlgAttribut.show()
-
+            self.dlgAttribut.lineedit_attribut.setFocus()
 
 
             result = self.dlgAttribut.exec_()
@@ -1409,6 +1728,11 @@ class BnicNancy:
 
         self.dlgAttribut.show()
         self.dlgAttribut.lineedit_attribut.setFocus()
+        try:
+            old_attr = self.currentLayer.selectedFeatures()[0].attributes()[0]
+            self.dlgAttribut.lineedit_attribut.setText(str(old_attr))
+        except:
+            pass
 
         result = self.dlgAttribut.exec_()
         # See if OK was pressed
@@ -1503,7 +1827,8 @@ class BnicNancy:
         self.currentLayer = self.layerTexte
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
-        self.iface.actionAddFeature().trigger()
+        self.attribut = True
+        self.canvas.setMapTool(self.punctualTool)
 
     def set_texteOriente_tool(self):
         self.currentLayer = self.layerTexteOriente
@@ -1582,6 +1907,13 @@ class BnicNancy:
         self.currentLayer.startEditing()
         self.iface.actionAddFeature().trigger()
 
+    def set_bornePolygo_tool(self):
+        self.currentLayer = self.layerBornePolygo
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.attribut = True
+        self.canvas.setMapTool(self.punctualTool)
+
     def set_borneRetrouvee_tool(self):
         self.currentLayer = self.layerBorneRetrouvee
         self.iface.setActiveLayer(self.currentLayer)
@@ -1602,11 +1934,60 @@ class BnicNancy:
         self.attribut = False
         self.canvas.setMapTool(self.segmentTool)
 
-    def set_cloture_tool(self):
-        self.currentLayer = self.layerCloture
+    def set_haieMitoyen_tool(self):
+        self.currentLayer = self.layerHaieMit
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.attribut = False
+        self.canvas.setMapTool(self.segmentTool)
+
+    def set_haieNonMitoyen_tool(self):
+        self.currentLayer = self.layerHaieNonMit
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.attribut = False
+        self.canvas.setMapTool(self.segmentTool)
+
+    def set_fosseMitoyen_tool(self):
+        self.currentLayer = self.layerFosseMit
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.attribut = False
+        self.canvas.setMapTool(self.segmentTool)
+
+    def set_fosseNonMitoyen_tool(self):
+        self.currentLayer = self.layerFosseNonMit
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.attribut = False
+        self.canvas.setMapTool(self.segmentTool)
+
+    def set_clotureMitoyen_tool(self):
+        self.currentLayer = self.layerClotureMit
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.iface.actionAddFeature().trigger()
+
+    def set_clotureNonMitoyen_tool(self):
+        self.currentLayer = self.layerClotureNonMit
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.attribut = False
+        self.canvas.setMapTool(self.segmentTool)
+
+    def set_clou_tool(self):
+        self.currentLayer = self.layerClou
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.attribut = True
+        self.canvas.setMapTool(self.punctualTool)
+
+    def set_clouLimite_tool(self):
+        self.currentLayer = self.layerClouLimite
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.attribut = False
+        self.canvas.setMapTool(self.segmentTool)
 
     def set_biffer_tool(self):
         self.currentLayer = self.layerBiffer
@@ -1631,7 +2012,6 @@ class BnicNancy:
         #necessary to call a function with parameters when button clavier is pressed
         def clavier_num():
             self.dlgClavierNum.show()
-
 
             result = self.dlgClavierNum.exec_()
             print(lineedit.value())
@@ -1704,27 +2084,93 @@ class BnicNancy:
                 else:
                     widget.show()
 
+    #Rechercher parcelle
+    def rechercher_parc(self):
+
+        #Get layer Polygones in group Ancien_Plan
+        root = QgsProject.instance().layerTreeRoot()
+        for layer in QgsProject.instance().mapLayersByName("Polygones"):
+            tree_layer = root.findLayer(layer.id())
+            layer_parent = tree_layer.parent()
+            if layer_parent.name() == "Ancien_Plan":
+                break
+
+        layer.removeSelection()
+        # self.iface.setActiveLayer(layer)
+        self.dlgParc.show()
+        self.dlgParc.LineEdit_section.setFocus()
+
+
+        result = self.dlgParc.exec_()
+        if result:
+            section=self.dlgParc.LineEdit_section.value()
+            parcelle=self.dlgParc.LineEdit_parc.value()
+
+            #on complete eventuellement avec des 0
+            if len(parcelle)<4:
+                parcelle=(4-len(parcelle))*'0'+parcelle
+
+            num_parc=section.upper()+parcelle
+            print(num_parc)
+            parcelle_trouvee=False
+
+            for feature in layer.getFeatures():
+                if feature.attributes()[1]=="1PARCELLE":
+                    #on recupere le code de la parcelle du feature
+                    num=feature.attributes()[2].split(":")[-1].replace(' ','').replace('"','').replace('}','')
+                    if num[6:]==num_parc:
+                        print('num: ',num)
+                        layer.select(feature.id())
+                        self.canvas.zoomToSelected()
+                        layer.removeSelection()
+                        parcelle_trouvee=True
+
+            if not parcelle_trouvee:
+                iface.messageBar().pushMessage("Aucune parcelle trouvée, vérifier le numéro de section/parcelle",level=Qgis.Critical, duration=5)
+
+        self.dlgParc.LineEdit_section.clearValue()
+        self.dlgParc.LineEdit_parc.clearValue()
+
     #Prendre mesure laser metre
     def mesure_laser(self):
         self.dlgLaser.show()
+        self.dlgLaser.lineEdit_dist.setFocus()
 
         result = self.dlgLaser.exec_()
         if result:
             try:
-                self.dist_laser=float(self.dlgLaser.label_dist_horiz.value())
+                # self.dist_laser=float(self.dlgLaser.label_dist_horiz.value())
+                self.dlgAttribut.lineedit_attribut.setText(self.dlgLaser.lineEdit_dist_horiz.value())
+                self.dlgAttribut.accept()
+                self.dlgLaser.lineEdit_dist.clearValue()
+                self.dlgLaser.lineEdit_dist_horiz.clearValue()
+
             except:
                 pass
+        else:
+            self.dlgAttribut.lineedit_attribut.setFocus()
+
 
     def calcul_dist_horizon(self):
 
-        try:
-            data=self.dlgLaser.lineEdit_dist.value().split(";")
-            dist=float(data[0])
-            angle=float(data[1])
-            dist_horizon=dist*Maths.cos(angle)
-            self.dlgLaser.label_dist_horiz.setText(str(dist_horizon))
-        except:
-            self.iface.messageBar().pushMessage("Mauvais format de données",level=Qgis.Critical, duration=3)
+        #len=0 signifie clearValue
+        if len(self.dlgLaser.lineEdit_dist.value())>0:
+            #detection valeur entierement recue grace au $ a la fin
+            if self.dlgLaser.lineEdit_dist.value()[-1]=="$":
+                print(self.dlgLaser.lineEdit_dist.value())
+                print(self.dlgLaser.lineEdit_dist.value()[-1])
+                try:
+                    data=self.dlgLaser.lineEdit_dist.value()
+                    data=data[:-1]
+                    data=data.split(";")
+                    dist=float(data[0])
+                    angle=float(data[1])
+                    dist_horizon=round(dist*Maths.cos(angle*Maths.pi/180) , 2)
+                    self.dlgLaser.lineEdit_dist_horiz.setText(str(dist_horizon))
+                    self.dlgLaser.lineEdit_dist.selectAll()
+                except:
+                    self.iface.messageBar().pushMessage("Mauvais format de données",level=Qgis.Critical, duration=3)
+                    self.dlgLaser.lineEdit_dist.selectAll()
 
 
 
