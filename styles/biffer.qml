@@ -1,14 +1,20 @@
 <!DOCTYPE qgis PUBLIC 'http://mrcc.com/qgis.dtd' 'SYSTEM'>
-<qgis hasScaleBasedVisibilityFlag="0" readOnly="0" styleCategories="AllStyleCategories" simplifyDrawingTol="1" minScale="100000000" simplifyLocal="1" simplifyDrawingHints="1" simplifyMaxScale="1" version="3.12.0-București" labelsEnabled="0" maxScale="0" simplifyAlgorithm="0">
+<qgis simplifyAlgorithm="0" version="3.14.0-Pi" simplifyDrawingHints="1" maxScale="0" minScale="100000000" simplifyLocal="1" styleCategories="AllStyleCategories" simplifyDrawingTol="1" readOnly="0" hasScaleBasedVisibilityFlag="0" labelsEnabled="0" simplifyMaxScale="1">
   <flags>
     <Identifiable>1</Identifiable>
     <Removable>1</Removable>
     <Searchable>1</Searchable>
   </flags>
-  <renderer-v2 symbollevels="0" forceraster="0" enableorderby="0" type="singleSymbol">
+  <temporal mode="0" startExpression="" startField="" accumulate="0" endExpression="" durationField="" enabled="0" endField="" durationUnit="min" fixedDuration="0">
+    <fixedRange>
+      <start></start>
+      <end></end>
+    </fixedRange>
+  </temporal>
+  <renderer-v2 symbollevels="0" enableorderby="0" forceraster="0" type="singleSymbol">
     <symbols>
-      <symbol force_rhr="0" clip_to_extent="1" alpha="1" name="0" type="line">
-        <layer enabled="1" pass="0" locked="0" class="SimpleLine">
+      <symbol alpha="1" name="0" force_rhr="0" type="line" clip_to_extent="1">
+        <layer class="SimpleLine" locked="0" enabled="1" pass="0">
           <prop v="square" k="capstyle"/>
           <prop v="5;2" k="customdash"/>
           <prop v="3x:0,0,0,0,0,0" k="customdash_map_unit_scale"/>
@@ -19,7 +25,7 @@
           <prop v="solid" k="line_style"/>
           <prop v="0.26" k="line_width"/>
           <prop v="MapUnit" k="line_width_unit"/>
-          <prop v="-0.7" k="offset"/>
+          <prop v="-0.55" k="offset"/>
           <prop v="3x:0,0,0,0,0,0" k="offset_map_unit_scale"/>
           <prop v="MapUnit" k="offset_unit"/>
           <prop v="0" k="ring_filter"/>
@@ -27,13 +33,13 @@
           <prop v="3x:0,0,0,0,0,0" k="width_map_unit_scale"/>
           <data_defined_properties>
             <Option type="Map">
-              <Option name="name" value="" type="QString"/>
+              <Option value="" name="name" type="QString"/>
               <Option name="properties"/>
-              <Option name="type" value="collection" type="QString"/>
+              <Option value="collection" name="type" type="QString"/>
             </Option>
           </data_defined_properties>
         </layer>
-        <layer enabled="1" pass="0" locked="0" class="SimpleLine">
+        <layer class="SimpleLine" locked="0" enabled="1" pass="0">
           <prop v="square" k="capstyle"/>
           <prop v="5;2" k="customdash"/>
           <prop v="3x:0,0,0,0,0,0" k="customdash_map_unit_scale"/>
@@ -44,7 +50,7 @@
           <prop v="solid" k="line_style"/>
           <prop v="0.26" k="line_width"/>
           <prop v="MapUnit" k="line_width_unit"/>
-          <prop v="0.7" k="offset"/>
+          <prop v="0.55" k="offset"/>
           <prop v="3x:0,0,0,0,0,0" k="offset_map_unit_scale"/>
           <prop v="MapUnit" k="offset_unit"/>
           <prop v="0" k="ring_filter"/>
@@ -52,9 +58,9 @@
           <prop v="3x:0,0,0,0,0,0" k="width_map_unit_scale"/>
           <data_defined_properties>
             <Option type="Map">
-              <Option name="name" value="" type="QString"/>
+              <Option value="" name="name" type="QString"/>
               <Option name="properties"/>
-              <Option name="type" value="collection" type="QString"/>
+              <Option value="collection" name="type" type="QString"/>
             </Option>
           </data_defined_properties>
         </layer>
@@ -64,20 +70,20 @@
     <sizescale/>
   </renderer-v2>
   <customproperties>
-    <property key="embeddedWidgets/count" value="0"/>
+    <property value="0" key="embeddedWidgets/count"/>
     <property key="variableNames"/>
     <property key="variableValues"/>
   </customproperties>
   <blendMode>0</blendMode>
   <featureBlendMode>0</featureBlendMode>
   <layerOpacity>1</layerOpacity>
-  <SingleCategoryDiagramRenderer diagramType="Histogram" attributeLegend="1">
-    <DiagramCategory backgroundColor="#ffffff" width="15" penWidth="0" lineSizeScale="3x:0,0,0,0,0,0" height="15" spacing="0" penAlpha="255" penColor="#000000" diagramOrientation="Up" maxScaleDenominator="1e+08" sizeScale="3x:0,0,0,0,0,0" showAxis="0" enabled="0" scaleBasedVisibility="0" minScaleDenominator="0" rotationOffset="270" opacity="1" minimumSize="0" lineSizeType="MM" labelPlacementMethod="XHeight" barWidth="5" scaleDependency="Area" spacingUnitScale="3x:0,0,0,0,0,0" sizeType="MM" direction="1" backgroundAlpha="255" spacingUnit="MM">
+  <SingleCategoryDiagramRenderer attributeLegend="1" diagramType="Histogram">
+    <DiagramCategory sizeType="MM" penAlpha="255" barWidth="5" rotationOffset="270" enabled="0" maxScaleDenominator="1e+08" showAxis="0" spacingUnit="MM" width="15" sizeScale="3x:0,0,0,0,0,0" spacingUnitScale="3x:0,0,0,0,0,0" backgroundColor="#ffffff" penColor="#000000" lineSizeScale="3x:0,0,0,0,0,0" height="15" labelPlacementMethod="XHeight" diagramOrientation="Up" scaleDependency="Area" lineSizeType="MM" scaleBasedVisibility="0" minScaleDenominator="0" penWidth="0" opacity="1" minimumSize="0" backgroundAlpha="255" direction="1" spacing="0">
       <fontProperties description="MS Shell Dlg 2,8.25,-1,5,50,0,0,0,0,0" style=""/>
-      <attribute color="#000000" field="" label=""/>
+      <attribute label="" color="#000000" field=""/>
       <axisSymbol>
-        <symbol force_rhr="0" clip_to_extent="1" alpha="1" name="" type="line">
-          <layer enabled="1" pass="0" locked="0" class="SimpleLine">
+        <symbol alpha="1" name="" force_rhr="0" type="line" clip_to_extent="1">
+          <layer class="SimpleLine" locked="0" enabled="1" pass="0">
             <prop v="square" k="capstyle"/>
             <prop v="5;2" k="customdash"/>
             <prop v="3x:0,0,0,0,0,0" k="customdash_map_unit_scale"/>
@@ -96,9 +102,9 @@
             <prop v="3x:0,0,0,0,0,0" k="width_map_unit_scale"/>
             <data_defined_properties>
               <Option type="Map">
-                <Option name="name" value="" type="QString"/>
+                <Option value="" name="name" type="QString"/>
                 <Option name="properties"/>
-                <Option name="type" value="collection" type="QString"/>
+                <Option value="collection" name="type" type="QString"/>
               </Option>
             </data_defined_properties>
           </layer>
@@ -106,16 +112,16 @@
       </axisSymbol>
     </DiagramCategory>
   </SingleCategoryDiagramRenderer>
-  <DiagramLayerSettings showAll="1" linePlacementFlags="18" priority="0" dist="0" obstacle="0" zIndex="0" placement="2">
+  <DiagramLayerSettings linePlacementFlags="18" obstacle="0" dist="0" showAll="1" priority="0" placement="2" zIndex="0">
     <properties>
       <Option type="Map">
-        <Option name="name" value="" type="QString"/>
+        <Option value="" name="name" type="QString"/>
         <Option name="properties"/>
-        <Option name="type" value="collection" type="QString"/>
+        <Option value="collection" name="type" type="QString"/>
       </Option>
     </properties>
   </DiagramLayerSettings>
-  <geometryOptions geometryPrecision="0" removeDuplicateNodes="0">
+  <geometryOptions removeDuplicateNodes="0" geometryPrecision="0">
     <activeChecks/>
     <checkConfiguration/>
   </geometryOptions>
@@ -131,27 +137,27 @@
     </field>
   </fieldConfiguration>
   <aliases>
-    <alias index="0" field="ID" name=""/>
+    <alias name="" index="0" field="ID"/>
   </aliases>
   <excludeAttributesWMS/>
   <excludeAttributesWFS/>
   <defaults>
-    <default field="ID" expression="" applyOnUpdate="0"/>
+    <default applyOnUpdate="0" expression="" field="ID"/>
   </defaults>
   <constraints>
-    <constraint notnull_strength="0" constraints="0" field="ID" unique_strength="0" exp_strength="0"/>
+    <constraint constraints="0" unique_strength="0" notnull_strength="0" exp_strength="0" field="ID"/>
   </constraints>
   <constraintExpressions>
     <constraint desc="" exp="" field="ID"/>
   </constraintExpressions>
   <expressionfields/>
   <attributeactions>
-    <defaultAction key="Canvas" value="{00000000-0000-0000-0000-000000000000}"/>
+    <defaultAction value="{00000000-0000-0000-0000-000000000000}" key="Canvas"/>
   </attributeactions>
-  <attributetableconfig sortOrder="0" actionWidgetStyle="dropDown" sortExpression="">
+  <attributetableconfig sortExpression="" sortOrder="0" actionWidgetStyle="dropDown">
     <columns>
       <column width="-1" hidden="1" type="actions"/>
-      <column width="-1" hidden="0" name="ID" type="field"/>
+      <column width="-1" name="ID" hidden="0" type="field"/>
     </columns>
   </attributetableconfig>
   <conditionalstyles>
@@ -181,13 +187,14 @@ def my_form_open(dialog, layer, feature):
   <featformsuppress>1</featformsuppress>
   <editorlayout>generatedlayout</editorlayout>
   <editable>
-    <field editable="1" name="ID"/>
-    <field editable="1" name="id"/>
+    <field name="ID" editable="1"/>
+    <field name="id" editable="1"/>
   </editable>
   <labelOnTop>
-    <field labelOnTop="0" name="ID"/>
-    <field labelOnTop="0" name="id"/>
+    <field name="ID" labelOnTop="0"/>
+    <field name="id" labelOnTop="0"/>
   </labelOnTop>
+  <dataDefinedFieldProperties/>
   <widgets/>
   <previewExpression>"ID"</previewExpression>
   <mapTip></mapTip>
