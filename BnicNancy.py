@@ -1652,6 +1652,7 @@ class BnicNancy:
                 result = self.dlgAttribut.exec_()
                 # See if OK was pressed
                 if result:
+                    print("ok")
                     try:
                         newValue=self.dlgAttribut.lineedit_attribut.value()
                         print(newValue)
@@ -1664,6 +1665,7 @@ class BnicNancy:
                     except:
                         pass
                 else:
+                    print("ok2")
                     self.currentLayer.dataProvider().deleteFeatures([ft.id()])
                     self.refresh_layer(self.currentLayer)
 
@@ -1742,7 +1744,7 @@ class BnicNancy:
     #valider polyligne
     def appui_entree(self):
 
-        if len(self.polyligneTool)>0:
+        if len(self.pointList)>0:
             self.display_polyligne()
         else:
             pyautogui.moveTo(800, 400)
