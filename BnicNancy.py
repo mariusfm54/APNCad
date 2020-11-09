@@ -48,7 +48,8 @@ from qgis.core import (QgsCoordinateReferenceSystem,
                        QgsFields,
                        QgsField,
                        QgsVectorFileWriter,
-                       QgsLayerTreeLayer)
+                       QgsLayerTreeLayer,
+                       QgsCoordinateTransformContext)
 
 # Initialize Qt resources from file resources.py
 from .resources import *
@@ -61,6 +62,7 @@ from .ClavierNum_dialog import ClavierNumDialog
 from .Crs_dialog import CrsDialog
 from .Laserm_dialog import LasermDialog
 from .RechercheParc_dialog import RechercheParcDialog
+from .Supprimer_dialog import SupprimerDialog
 
 import os.path
 import sys
@@ -103,12 +105,6 @@ class BnicNancy:
         self.menu.setObjectName("bnMenu")
         self.menu.setTitle("Préparation Delim")
         self.iface.mainWindow().menuBar().insertMenu(self.iface.firstRightStandardMenu().menuAction(),self.menu)
-
-        #menu SCR
-        self.menu_scr = QMenu(self.iface.mainWindow())
-        self.menu_scr.setObjectName("bnSCRMenu")
-        self.menu_scr.setTitle("SCR")
-        self.iface.mainWindow().menuBar().insertMenu(self.iface.firstRightStandardMenu().menuAction(),self.menu_scr)
 
         # Check if plugin was started the first time in current QGIS session
         # Must be set in initGui() to survive plugin reloads
@@ -318,6 +314,12 @@ class BnicNancy:
         self.dlgAttribut.setFixedSize(425, 132)
         self.dlgAttribut.pushButton_clavier.clicked.connect(self.make_clavier_num(self.dlgAttribut.lineedit_attribut))
         self.dlgAttribut.pushButton_laser.clicked.connect(self.mesure_laser)
+        #lecture des attributs dans fichier txt
+        file_txt=open(self.plugin_dir+'/attribut_texte.txt')
+        txt=file_txt.read()
+        list=txt.split()
+        self.dlgAttribut.comboBox_texte.addItems(list)
+        self.dlgAttribut.comboBox_texte.activated.connect(self.fill_from_combo(self.dlgAttribut.comboBox_texte,self.dlgAttribut.lineedit_attribut))
 
         #Fenetre parametres point
         self.dlg = BnicNancyDialog()
@@ -329,7 +331,7 @@ class BnicNancy:
 
         #Fenetre liste points
         self.dlgListe = ListePointDialog()
-        self.dlgListe.setFixedSize(275, 439)
+        self.dlgListe.setFixedSize(322, 352)
 
 
         #Fenetre choix SCR
@@ -359,6 +361,14 @@ class BnicNancy:
         self.dlgParc.setFixedSize(463,179)
         self.dlgParc.pushButton_clavierNum.clicked.connect(self.make_clavier_num(self.dlgParc.LineEdit_parc))
 
+        #Fenetre suppression
+        self.dlgSup = SupprimerDialog()
+        self.dlgSup.setFixedSize(455,409)
+        self.dlgSup.pushButton_delete.clicked.connect(self.delete_selection)
+
+        #Liste contenant les plus proches objets
+        self.layerData=[]
+
         #Outils
         #Tracer point
         self.canvas = self.iface.mapCanvas()
@@ -378,6 +388,9 @@ class BnicNancy:
 
         #tracer arc (3 pts)
         self.arcTool = SnappingMapToolEmitPoint(self.canvas)
+
+        #tracer polyligne
+        self.polyligneTool = SnappingMapToolEmitPoint(self.canvas)
 
         #tracer entite ponctuelle (1 pt)
         self.punctualTool = SnappingMapToolEmitPoint(self.canvas)
@@ -856,6 +869,19 @@ class BnicNancy:
         boutonMenuTranslation.addAction(self.actions[self.id_copier_feat])
 
 
+        #choix SCR et enregistrer sous
+        icon_path=':/plugins/BnicNancy/icon34.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Choisir un SCR'),
+            callback=self.set_crs,
+            menu=self.menu,
+            enabled_flag=True,
+            add_to_menu=True,
+            parent=self.iface.mainWindow())
+
+        self.id_set_crs=len(self.actions)-1
+
 
         #action generer couche pour nouveau projet (menu uniquement)
         icon_path=':/plugins/BnicNancy/icon33.png'
@@ -870,18 +896,7 @@ class BnicNancy:
         self.id_generate_layer=len(self.actions)-1
 
 
-        #choix SCR et enregistrer sous
-        icon_path=':/plugins/BnicNancy/icon34.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Choisir un SCR'),
-            callback=self.set_crs,
-            menu=self.menu_scr,
-            enabled_flag=True,
-            add_to_menu=True,
-            parent=self.iface.mainWindow())
 
-        self.id_set_crs=len(self.actions)-1
 
 
 
@@ -1048,6 +1063,8 @@ class BnicNancy:
 
         self.copyTool.canvasClicked.connect(self.translate_copy_feature)
 
+        self.polyligneTool.snapClicked.connect(self.add_point)
+
 
 
         #verifie la bonne connexion
@@ -1190,6 +1207,7 @@ class BnicNancy:
 
         #enable tools
         self.start_function()
+        self.actions[self.id_generate_layer].setEnabled(False)
 
 
     #Completer un projet existant avec des nouvelles couches
@@ -1219,7 +1237,7 @@ class BnicNancy:
                 compteur+=1
 
                 #Repertoire fichiers couche
-                fn=pathProj+"/"+couche[0]+".shp"
+                fn=pathProj+"/Build_"+couche[0]+".shp"
 
                 # create fields
                 layerFields = QgsFields()
@@ -1232,26 +1250,35 @@ class BnicNancy:
                 else:
                     layerFields.append(QgsField('ID', QVariant.String))
 
+
+                # options = QgsVectorFileWriter.SaveVectorOptions()
+                # options.driverName = "ESRI Shapefile"
+                # options.fileEncoding='System'
+
                 #Creation des couches et d'un premier feature (obligatoire pour pouvoir ajouter des entites)
                 if couche[1]=="Point":
                     writer = QgsVectorFileWriter(fn, 'System', layerFields, QgsWkbTypes.Point, QgsCoordinateReferenceSystem(crs), 'ESRI Shapefile')
+                    # writer = QgsVectorFileWriter.create(fn, layerFields, QgsWkbTypes.Point, QgsCoordinateReferenceSystem(crs),QgsCoordinateTransformContext(),options)
                     feat = QgsFeature()
                     feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(0, 0)))
 
                 if couche[1]=="Ligne":
                     writer = QgsVectorFileWriter(fn, 'System', layerFields, QgsWkbTypes.LineString, QgsCoordinateReferenceSystem(crs), 'ESRI Shapefile')
+                    # writer = QgsVectorFileWriter.create(fn, layerFields, QgsWkbTypes.LineString, QgsCoordinateReferenceSystem(crs),QgsCoordinateTransformContext(),options)
                     feat = QgsFeature()
                     feat.setGeometry(QgsGeometry.fromPolyline([QgsPoint(0,0), QgsPoint(1,1)]))
 
                 if couche[1]=="Polygone":
                     writer = QgsVectorFileWriter(fn, 'System', layerFields, QgsWkbTypes.Polygon, QgsCoordinateReferenceSystem(crs), 'ESRI Shapefile')
+                    # writer = QgsVectorFileWriter.create(fn, layerFields, QgsWkbTypes.Polygon, QgsCoordinateReferenceSystem(crs),QgsCoordinateTransformContext(),options)
                     feat = QgsFeature()
                     feat.setGeometry(QgsGeometry.fromPolygonXY([[QgsPointXY(0,0), QgsPointXY(1,1), QgsPointXY(2,2)]]))
 
 
                 feat.setAttributes([1])
                 writer.addFeature(feat)
-                layer = self.iface.addVectorLayer(fn, '', 'ogr')
+                layer = self.iface.addVectorLayer(fn,'', 'ogr')
+                layer.setName(couche[0])
                 del(writer)
 
                 #On supprime l'entite fictive ajoutee
@@ -1599,6 +1626,50 @@ class BnicNancy:
                     self.refresh_layer(self.currentLayer)
 
 
+
+    def add_point(self, point, button):
+            pt=QgsPoint(point.x(),point.y())
+            self.pointList.append(pt)
+
+    def display_polyligne(self):
+
+            feat = QgsFeature()
+            feat.setGeometry(QgsGeometry.fromPolyline(self.pointList))
+            self.currentLayer.dataProvider().addFeatures([feat])
+            self.refresh_layer(self.currentLayer)
+            self.pointList=[]
+            self.currentLayer.commitChanges()
+
+            if self.attribut:
+                for feature in self.currentLayer.getFeatures():
+                    ft=feature
+
+                #fenetre entrer cote
+                self.dlgAttribut.show()
+                self.dlgAttribut.lineedit_attribut.setFocus()
+
+
+                result = self.dlgAttribut.exec_()
+                # See if OK was pressed
+                if result:
+                    try:
+                        newValue=self.dlgAttribut.lineedit_attribut.value()
+                        print(newValue)
+
+                        attrs = {0 : newValue}
+                        self.currentLayer.dataProvider().changeAttributeValues({ ft.id() : attrs })
+                        self.refresh_layer(self.currentLayer)
+                        self.dlgAttribut.lineedit_attribut.clearValue()
+
+                    except:
+                        pass
+                else:
+                    self.currentLayer.dataProvider().deleteFeatures([ft.id()])
+                    self.refresh_layer(self.currentLayer)
+
+
+
+
     def set_coteCourbe_tool(self):
         self.currentLayer = self.layerCoteSurLigne
         self.iface.setActiveLayer(self.currentLayer)
@@ -1668,12 +1739,18 @@ class BnicNancy:
 
 
 
-
+    #valider polyligne
     def appui_entree(self):
-        pyautogui.moveTo(800, 400)
-        pyautogui.click(button='right')
+
+        if len(self.polyligneTool)>0:
+            self.display_polyligne()
+        else:
+            pyautogui.moveTo(800, 400)
+            pyautogui.click(button='right')
 
     def appui_echap(self):
+
+        self.pointList=[]
         pyautogui.moveTo(800, 400)
         pyautogui.click(button='left')
         #pyautogui.press('tab', presses=4)
@@ -1700,18 +1777,49 @@ class BnicNancy:
         #self.dlgModif.reject() #ferme la fenetre
         self.save_layers()
 
-        obj = self.select_nearest_feature(point, button)
+        obj = self.find_nearest_features(point, button)
 
         if obj:
-            self.currentLayer.dataProvider().deleteFeatures([self.closestFeatureId])
-            self.currentLayer.removeSelection()
-            self.refresh_layer(self.currentLayer)
 
-        #self.canvas.setMapTool(self.toolPan)
+            if len(self.layerData)>1:
+                self.currentLayer.removeSelection()
+                self.dlgSup.tableWidget_closest.setRowCount(0)
+                for i in range(len(self.layerData)):
+                    self.dlgSup.tableWidget_closest.insertRow(i)
+                    layer=self.layerData[i][0]
+                    id=self.layerData[i][1]
+                    dist=round(self.layerData[i][2],2)
+                    self.dlgSup.tableWidget_closest.setCellWidget(i, 0, QLineEdit(str(id)))
+                    self.dlgSup.tableWidget_closest.setCellWidget(i, 1, QLineEdit(layer.name()))
+                    self.dlgSup.tableWidget_closest.setCellWidget(i, 2, QLineEdit(str(layer.getFeature(id).attributes()[0])))
+                    self.dlgSup.tableWidget_closest.setCellWidget(i, 3, QLineEdit(str(dist)))
 
-        #maj plus grand point
-        # self.max_Point()
-        # self.lastPoint.setText(str(self.pointmax))
+                self.dlgSup.show()
+
+            else:
+
+                layerWithClosestFeature, self.closestFeatureId, shortestDistance = self.layerData[0]
+                layerWithClosestFeature.select( self.closestFeatureId )
+                self.currentLayer=layerWithClosestFeature
+
+                self.currentLayer.dataProvider().deleteFeatures([self.closestFeatureId])
+                self.currentLayer.removeSelection()
+                self.refresh_layer(self.currentLayer)
+
+
+    def delete_selection(self):
+        ligne=self.dlgSup.tableWidget_closest.selectionModel().selectedRows()[0].row()
+        print(ligne)
+        print(self.dlgSup.tableWidget_closest.cellWidget(ligne,0))
+        self.closestFeatureId=int(self.dlgSup.tableWidget_closest.cellWidget(ligne,0).text())
+        layerName=self.dlgSup.tableWidget_closest.cellWidget(ligne,1).text()
+        self.currentLayer=QgsProject.instance().mapLayersByName(layerName)[0]
+        self.dlgSup.reject()
+
+        self.currentLayer.select(self.closestFeatureId)
+        self.currentLayer.dataProvider().deleteFeatures([self.closestFeatureId])
+        self.currentLayer.removeSelection()
+        self.refresh_layer(self.currentLayer)
 
 
 
@@ -1815,13 +1923,15 @@ class BnicNancy:
         self.currentLayer = self.layerMurDroite
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
-        self.iface.actionAddFeature().trigger()
+        self.attribut = True
+        self.canvas.setMapTool(self.polyligneTool)
 
     def set_murMilieu_tool(self):
         self.currentLayer = self.layerMurMilieu
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
-        self.iface.actionAddFeature().trigger()
+        self.attribut = True
+        self.canvas.setMapTool(self.polyligneTool)
 
     def set_Texte_tool(self):
         self.currentLayer = self.layerTexte
@@ -2060,6 +2170,13 @@ class BnicNancy:
         value=self.dlgClavierNum.lineedit_valeur.value()
         self.dlgClavierNum.lineedit_valeur.setText(value[:-1])
 
+    def fill_from_combo(self,combo,lineedit):
+        def fill():
+
+            text=self.dlgAttribut.comboBox_texte.currentText()
+            lineedit.setText(text)
+
+        return fill
 
     #identify the layer of a selected object
     def set_identifyLayer_tool(self):
@@ -2220,7 +2337,7 @@ class BnicNancy:
 
 
     def select_nearest_feature(self, point, button):
-        layerData = []
+        self.layerData = []
 
         for layer in self.canvas.layers():
 
@@ -2255,32 +2372,81 @@ class BnicNancy:
                     self.closestFeatureId = f.id()
 
             info = (layer, self.closestFeatureId, shortestDistance)
-            layerData.append(info)
+            self.layerData.append(info)
 
 
 
-        if not len(layerData) > 0:
+        if not len(self.layerData) > 0:
             # Looks like no vector layers were found - do nothing
             self.iface.messageBar().pushMessage("Aucun objet trouvé",level=Qgis.Critical, duration=3)
             return False
 
         # Sort the layer information by shortest distance
-        layerData.sort( key=lambda element: element[2] )
+        self.layerData.sort( key=lambda element: element[2] )
 
-        if layerData[0][2]>5:
+        if self.layerData[0][2]>5:
             # Looks like no close elements were found - do nothing
             self.iface.messageBar().pushMessage("Aucun objet proche trouvé",level=Qgis.Critical, duration=3)
-            print(layerData[0][2])
+            print(self.layerData[0][2])
             return False
 
 
         # Select the closest feature
-        layerWithClosestFeature, self.closestFeatureId, shortestDistance = layerData[0]
+        layerWithClosestFeature, self.closestFeatureId, shortestDistance = self.layerData[0]
         layerWithClosestFeature.select( self.closestFeatureId )
         self.currentLayer=layerWithClosestFeature
         print(self.closestFeatureId)
 
         return True
+
+    def find_nearest_features(self,point,button):
+        self.layerData = []
+
+        for layer in self.canvas.layers():
+
+            if layer.type() != QgsMapLayer.VectorLayer:
+                # Ignore this layer as it's not a vector
+                continue
+
+            if layer.featureCount() == 0:
+                # There are no features - skip
+                continue
+
+            groupName = QgsProject.instance().layerTreeRoot().findLayer(layer.id()).parent().name()
+            #features you cannot select
+            if groupName == "Restit" or groupName == "CroqRem" or groupName == "Ancien_Plan" or groupName == "Ortho":
+                continue
+
+
+            layer.removeSelection()
+
+            # Determine the location of the click in real-world coords
+            #layerPoint = self.toLayerCoordinates( layer, mouseEvent.pos() )
+
+
+            shortestDistance = float("inf")
+            self.closestFeatureId = -1
+
+            # Loop through all features in the layer
+            for f in layer.getFeatures():
+                dist = f.geometry().distance( QgsGeometry.fromPointXY(QgsPointXY(point.x(),point.y())))
+                if dist < 5 and dist>0:
+                    info = (layer, f.id(), dist)
+                    self.layerData.append(info)
+
+
+
+
+        if not len(self.layerData) > 0:
+            # Looks like no vector layers were found - do nothing
+            self.iface.messageBar().pushMessage("Aucun objet trouvé",level=Qgis.Critical, duration=3)
+            return False
+
+        # Sort the layer information by shortest distance
+        self.layerData.sort( key=lambda element: element[2] )
+
+        return True
+
 
     #refresh canvas
     def refresh_layer(self,layer):
@@ -2319,7 +2485,7 @@ class BnicNancy:
             #self.iface.removeToolBarIcon(action)
 
         self.menu.deleteLater()
-        self.menu_scr.deleteLater()
+        # self.menu_scr.deleteLater()
 
         #self.iface.removeToolBarIcon(self.toolBtnAction)
         self.toolbar.clear()
