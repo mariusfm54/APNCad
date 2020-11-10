@@ -65,6 +65,7 @@ from .RechercheParc_dialog import RechercheParcDialog
 from .Supprimer_dialog import SupprimerDialog
 
 import os.path
+from os import listdir
 import sys
 import time
 import pyautogui
@@ -317,7 +318,7 @@ class BnicNancy:
         #lecture des attributs dans fichier txt
         file_txt=open(self.plugin_dir+'/attribut_texte.txt')
         txt=file_txt.read()
-        list=txt.split()
+        list=txt.split('\n')
         self.dlgAttribut.comboBox_texte.addItems(list)
         self.dlgAttribut.comboBox_texte.activated.connect(self.fill_from_combo(self.dlgAttribut.comboBox_texte,self.dlgAttribut.lineedit_attribut))
 
@@ -363,7 +364,7 @@ class BnicNancy:
 
         #Fenetre suppression
         self.dlgSup = SupprimerDialog()
-        self.dlgSup.setFixedSize(455,409)
+        self.dlgSup.setFixedSize(546,409)
         self.dlgSup.pushButton_delete.clicked.connect(self.delete_selection)
 
         #Liste contenant les plus proches objets
@@ -1232,8 +1233,9 @@ class BnicNancy:
         for couche in self.listLayers:
 
             #si la couche n'existe pas
-            if len(QgsProject.instance().mapLayersByName(couche[0]))==0:
+            if len(QgsProject.instance().mapLayersByName(couche[0]))==0 and listdir(pathProj).count("Build_"+couche[0]+".shp")==0:
 
+                print(listdir(pathProj).count("Build_"+couche[0]+".shp"))
                 compteur+=1
 
                 #Repertoire fichiers couche
@@ -1652,7 +1654,6 @@ class BnicNancy:
                 result = self.dlgAttribut.exec_()
                 # See if OK was pressed
                 if result:
-                    print("ok")
                     try:
                         newValue=self.dlgAttribut.lineedit_attribut.value()
                         print(newValue)
@@ -1665,7 +1666,6 @@ class BnicNancy:
                     except:
                         pass
                 else:
-                    print("ok2")
                     self.currentLayer.dataProvider().deleteFeatures([ft.id()])
                     self.refresh_layer(self.currentLayer)
 
@@ -1791,10 +1791,23 @@ class BnicNancy:
                     layer=self.layerData[i][0]
                     id=self.layerData[i][1]
                     dist=round(self.layerData[i][2],2)
-                    self.dlgSup.tableWidget_closest.setCellWidget(i, 0, QLineEdit(str(id)))
-                    self.dlgSup.tableWidget_closest.setCellWidget(i, 1, QLineEdit(layer.name()))
-                    self.dlgSup.tableWidget_closest.setCellWidget(i, 2, QLineEdit(str(layer.getFeature(id).attributes()[0])))
-                    self.dlgSup.tableWidget_closest.setCellWidget(i, 3, QLineEdit(str(dist)))
+
+                    line_id=QLineEdit(str(id))
+                    line_id.setReadOnly(True)
+
+                    line_layer=QLineEdit(layer.name())
+                    line_layer.setReadOnly(True)
+
+                    line_attribut=QLineEdit(str(layer.getFeature(id).attributes()[0]))
+                    line_attribut.setReadOnly(True)
+
+                    line_dist=QLineEdit(str(dist))
+                    line_dist.setReadOnly(True)
+
+                    self.dlgSup.tableWidget_closest.setCellWidget(i, 0, line_id)
+                    self.dlgSup.tableWidget_closest.setCellWidget(i, 1, line_layer)
+                    self.dlgSup.tableWidget_closest.setCellWidget(i, 2, line_attribut)
+                    self.dlgSup.tableWidget_closest.setCellWidget(i, 3, line_dist)
 
                 self.dlgSup.show()
 
@@ -2129,7 +2142,8 @@ class BnicNancy:
             print(lineedit.value())
             # See if OK was pressed
             if result:
-                lineedit.setText(self.dlgClavierNum.lineedit_valeur.value())
+                txt=lineedit.value()+self.dlgClavierNum.lineedit_valeur.value()
+                lineedit.setText(txt)
                 self.dlgClavierNum.lineedit_valeur.clearValue()
 
         return clavier_num
@@ -2432,7 +2446,7 @@ class BnicNancy:
             # Loop through all features in the layer
             for f in layer.getFeatures():
                 dist = f.geometry().distance( QgsGeometry.fromPointXY(QgsPointXY(point.x(),point.y())))
-                if dist < 5 and dist>0:
+                if dist < 1 and dist>0:
                     info = (layer, f.id(), dist)
                     self.layerData.append(info)
 

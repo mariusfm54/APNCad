@@ -6,7 +6,7 @@
 name=BnicNancy
 qgisMinimumVersion=3.0
 description=Ensemble d'outils utilsés par la Brigade Nationale d'Intervention Cadastrale de Nancy pour la prise de notes sur le terrain
-version=3.0
+version=3.3
 author=Marius François-Marchal
 email=m.francois.marchal@gmail.com
 
