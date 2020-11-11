@@ -58,7 +58,7 @@
     </property>
    </column>
   </widget>
-  <widget class="QPushButton" name="pushButton_delete">
+  <widget class="QPushButton" name="pushButton_select">
    <property name="geometry">
     <rect>
      <x>220</x>
@@ -68,7 +68,7 @@
     </rect>
    </property>
    <property name="text">
-    <string>Supprimer</string>
+    <string>Sélectionner</string>
    </property>
   </widget>
   <widget class="QLabel" name="label">

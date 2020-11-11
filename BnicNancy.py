@@ -363,9 +363,9 @@ class BnicNancy:
         self.dlgParc.pushButton_clavierNum.clicked.connect(self.make_clavier_num(self.dlgParc.LineEdit_parc))
 
         #Fenetre suppression
-        self.dlgSup = SupprimerDialog()
-        self.dlgSup.setFixedSize(546,409)
-        self.dlgSup.pushButton_delete.clicked.connect(self.delete_selection)
+        self.dlgNear = SupprimerDialog()
+        self.dlgNear.setFixedSize(546,409)
+        self.dlgNear.pushButton_select.clicked.connect(self.select_feat)
 
         #Liste contenant les plus proches objets
         self.layerData=[]
@@ -1235,7 +1235,6 @@ class BnicNancy:
             #si la couche n'existe pas
             if len(QgsProject.instance().mapLayersByName(couche[0]))==0 and listdir(pathProj).count("Build_"+couche[0]+".shp")==0:
 
-                print(listdir(pathProj).count("Build_"+couche[0]+".shp"))
                 compteur+=1
 
                 #Repertoire fichiers couche
@@ -1782,59 +1781,9 @@ class BnicNancy:
         obj = self.find_nearest_features(point, button)
 
         if obj:
-
-            if len(self.layerData)>1:
-                self.currentLayer.removeSelection()
-                self.dlgSup.tableWidget_closest.setRowCount(0)
-                for i in range(len(self.layerData)):
-                    self.dlgSup.tableWidget_closest.insertRow(i)
-                    layer=self.layerData[i][0]
-                    id=self.layerData[i][1]
-                    dist=round(self.layerData[i][2],2)
-
-                    line_id=QLineEdit(str(id))
-                    line_id.setReadOnly(True)
-
-                    line_layer=QLineEdit(layer.name())
-                    line_layer.setReadOnly(True)
-
-                    line_attribut=QLineEdit(str(layer.getFeature(id).attributes()[0]))
-                    line_attribut.setReadOnly(True)
-
-                    line_dist=QLineEdit(str(dist))
-                    line_dist.setReadOnly(True)
-
-                    self.dlgSup.tableWidget_closest.setCellWidget(i, 0, line_id)
-                    self.dlgSup.tableWidget_closest.setCellWidget(i, 1, line_layer)
-                    self.dlgSup.tableWidget_closest.setCellWidget(i, 2, line_attribut)
-                    self.dlgSup.tableWidget_closest.setCellWidget(i, 3, line_dist)
-
-                self.dlgSup.show()
-
-            else:
-
-                layerWithClosestFeature, self.closestFeatureId, shortestDistance = self.layerData[0]
-                layerWithClosestFeature.select( self.closestFeatureId )
-                self.currentLayer=layerWithClosestFeature
-
-                self.currentLayer.dataProvider().deleteFeatures([self.closestFeatureId])
-                self.currentLayer.removeSelection()
-                self.refresh_layer(self.currentLayer)
-
-
-    def delete_selection(self):
-        ligne=self.dlgSup.tableWidget_closest.selectionModel().selectedRows()[0].row()
-        print(ligne)
-        print(self.dlgSup.tableWidget_closest.cellWidget(ligne,0))
-        self.closestFeatureId=int(self.dlgSup.tableWidget_closest.cellWidget(ligne,0).text())
-        layerName=self.dlgSup.tableWidget_closest.cellWidget(ligne,1).text()
-        self.currentLayer=QgsProject.instance().mapLayersByName(layerName)[0]
-        self.dlgSup.reject()
-
-        self.currentLayer.select(self.closestFeatureId)
-        self.currentLayer.dataProvider().deleteFeatures([self.closestFeatureId])
-        self.currentLayer.removeSelection()
-        self.refresh_layer(self.currentLayer)
+            self.currentLayer.dataProvider().deleteFeatures([self.closestFeatureId])
+            self.currentLayer.removeSelection()
+            self.refresh_layer(self.currentLayer)
 
 
 
@@ -1847,40 +1796,41 @@ class BnicNancy:
     def modify_attribute(self,point, button ):
         self.save_layers()
 
-        self.select_nearest_feature(point, button)
+        obj = self.find_nearest_features(point, button)
+        if obj:
 
-        self.dlgAttribut.show()
-        self.dlgAttribut.lineedit_attribut.setFocus()
-        try:
-            old_attr = self.currentLayer.selectedFeatures()[0].attributes()[0]
-            self.dlgAttribut.lineedit_attribut.setText(str(old_attr))
-        except:
-            pass
-
-        result = self.dlgAttribut.exec_()
-        # See if OK was pressed
-        if result:
+            self.dlgAttribut.show()
+            self.dlgAttribut.lineedit_attribut.setFocus()
             try:
-
-                newValue=self.dlgAttribut.lineedit_attribut.value()
-
-                typeName=self.currentLayer.fields()[0].typeName()
-                if  typeName == "Integer64" or typeName == "Integer":
-                    newValue=int(newValue)
-                attrs = {0 : newValue}
-                self.currentLayer.dataProvider().changeAttributeValues({ self.closestFeatureId : attrs })
-                self.currentLayer.removeSelection()
-                self.refresh_layer(self.currentLayer)
-                #self.max_Point()
-                #self.lastPoint.setText(str(self.pointmax))
-
-                #self.canvas.setMapTool(self.toolPan)
+                old_attr = self.currentLayer.selectedFeatures()[0].attributes()[0]
+                self.dlgAttribut.lineedit_attribut.setText(str(old_attr))
             except:
                 pass
 
-        self.currentLayer.removeSelection()
-        #efface le texte des lineEdit
-        self.dlgAttribut.lineedit_attribut.clearValue()
+            result = self.dlgAttribut.exec_()
+            # See if OK was pressed
+            if result:
+                try:
+
+                    newValue=self.dlgAttribut.lineedit_attribut.value()
+
+                    typeName=self.currentLayer.fields()[0].typeName()
+                    if  typeName == "Integer64" or typeName == "Integer":
+                        newValue=int(newValue)
+                    attrs = {0 : newValue}
+                    self.currentLayer.dataProvider().changeAttributeValues({ self.closestFeatureId : attrs })
+                    self.currentLayer.removeSelection()
+                    self.refresh_layer(self.currentLayer)
+                    #self.max_Point()
+                    #self.lastPoint.setText(str(self.pointmax))
+
+                    #self.canvas.setMapTool(self.toolPan)
+                except:
+                    pass
+
+            self.currentLayer.removeSelection()
+            #efface le texte des lineEdit
+            self.dlgAttribut.lineedit_attribut.clearValue()
 
 
     def set_translation_tool(self):
@@ -1897,14 +1847,18 @@ class BnicNancy:
 
         #1er point
         if len(self.pointList)==0:
-            self.select_nearest_feature(point, button)
-            pt=QgsPoint(point.x(),point.y())
-            self.pointList.append(pt)
-            print(self.currentLayer.name())
-            #si on veut copier et translater
-            if self.copy:
-                ft=self.currentLayer.getFeature(self.closestFeatureId)
-                self.currentLayer.dataProvider().addFeatures([ft])
+
+            obj = self.find_nearest_features(point, button)
+            if obj:
+
+                # self.select_nearest_feature(point, button)
+                pt=QgsPoint(point.x(),point.y())
+                self.pointList.append(pt)
+                print(self.currentLayer.name())
+                #si on veut copier et translater
+                if self.copy:
+                    ft=self.currentLayer.getFeature(self.closestFeatureId)
+                    self.currentLayer.dataProvider().addFeatures([ft])
 
         #2e point
         else:
@@ -2461,7 +2415,62 @@ class BnicNancy:
         # Sort the layer information by shortest distance
         self.layerData.sort( key=lambda element: element[2] )
 
+        if len(self.layerData)>1:
+            self.dlgNear.tableWidget_closest.setRowCount(0)
+            for i in range(len(self.layerData)):
+                self.dlgNear.tableWidget_closest.insertRow(i)
+                layer=self.layerData[i][0]
+                id=self.layerData[i][1]
+                dist=round(self.layerData[i][2],2)
+
+                line_id=QLineEdit(str(id))
+                line_id.setReadOnly(True)
+
+                line_layer=QLineEdit(layer.name())
+                line_layer.setReadOnly(True)
+
+                line_attribut=QLineEdit(str(layer.getFeature(id).attributes()[0]))
+                line_attribut.setReadOnly(True)
+
+                line_dist=QLineEdit(str(dist))
+                line_dist.setReadOnly(True)
+
+                self.dlgNear.tableWidget_closest.setCellWidget(i, 0, line_id)
+                self.dlgNear.tableWidget_closest.setCellWidget(i, 1, line_layer)
+                self.dlgNear.tableWidget_closest.setCellWidget(i, 2, line_attribut)
+                self.dlgNear.tableWidget_closest.setCellWidget(i, 3, line_dist)
+
+            self.dlgNear.show()
+            result = self.dlgNear.exec_()
+            if not result:
+                return False
+
+
+        else:
+
+            layerWithClosestFeature, self.closestFeatureId, shortestDistance = self.layerData[0]
+            layerWithClosestFeature.select( self.closestFeatureId )
+            self.currentLayer=layerWithClosestFeature
+
         return True
+
+    def select_feat(self):
+
+        try:
+            ligne=self.dlgNear.tableWidget_closest.selectionModel().selectedRows()[0].row()
+            print(ligne)
+            print(self.dlgNear.tableWidget_closest.cellWidget(ligne,0))
+
+            self.closestFeatureId=int(self.dlgNear.tableWidget_closest.cellWidget(ligne,0).text())
+            layerName=self.dlgNear.tableWidget_closest.cellWidget(ligne,1).text()
+            self.currentLayer=QgsProject.instance().mapLayersByName(layerName)[0]
+            self.currentLayer.select(self.closestFeatureId)
+
+            self.dlgNear.accept()
+
+        except:
+            self.iface.messageBar().pushMessage("Aucun objet sélectionné",level=Qgis.Critical, duration=4)
+
 
 
     #refresh canvas
