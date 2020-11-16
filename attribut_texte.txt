@@ -1,3 +1,13 @@
-numero
-client
-parcelle
+N°
+Abri
+Abri de jardin
+Bati Dur
+Bati léger
+Maison d'habitation
+Garage
+Jardin
+Prés
+Forêt
+Piscine
+Tél :
+

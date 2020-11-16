@@ -1,9 +1,31 @@
+"""
+/***************************************************************************
+ SnappingMapToolEmitPoint
+                                 A QGIS plugin
+ Applicatif destiné à la prise de notes sur tablette numérique lors des opérations de terrain réalisées pendant le remaniement cadatral
+                             -------------------
+        begin                : 2020-02-24
+        git sha              : https://github.com/Va2sili/BnicNancy
+        copyright            : (C) 2020 by Marius François-Marchal
+        email                : m.francois.marchal@gmail.com
+ ***************************************************************************/
+
+/***************************************************************************
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ ***************************************************************************/
+"""
+
 from qgis.gui import QgsMapToolEmitPoint, QgsSnapIndicator
 from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsPointXY
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
 
-
+#Outil fonctionnant avec accrochage
 class SnappingMapToolEmitPoint(QgsMapToolEmitPoint):
     snapClicked = pyqtSignal(QgsPointXY, Qt.MouseButton)
 
