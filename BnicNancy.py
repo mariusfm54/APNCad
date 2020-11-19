@@ -346,7 +346,7 @@ class BnicNancy:
         self.iface.actionSaveProjectAs().triggered.connect(self.set_crs_on_top)
 
         #Liste des couches, de leur type et leur groupe
-        self.listLayers = [("debordT","Point","Symbole"),("borne","Point","Symbole"),("clotureMit","Point","Symbole"),("murmitoyen","Ligne","Symbole"),("murnonmi","Ligne","Symbole"),("borne_retrouvee","Point","Symbole"),   ("biffer","Ligne","Symbole"),("MurDroite","Ligne","Dessin"),("Point","Point","Dessin"),("Texte","Point","Dessin"),("TexteOriente","Ligne","Dessin"),("MurMilieu","Ligne","Dessin"),("coteSURLigne","Ligne","Dessin"),("LigneDiscontinue","Ligne","Dessin"),("LigneContinue","Ligne","Dessin"),("cotesansligne","Ligne","Dessin"),("polygone","Polygone","Dessin"),("image","Point","Autre"),("HaieNonMit","Ligne","Symbole"),("Haiemit","Ligne","Symbole"),("Fossenonmit","Ligne","Symbole"),("FosseMit","Ligne","Symbole"),("Cloturenonmit","Ligne","Symbole"),("BornePolygo","Point","Symbole"),("clou","Point","Symbole"),("clouLimite","Ligne","Symbole"),("Coterepere","Ligne","Symbole"),("CroixGravee","Point","Symbole"),("RepereIGN","Ligne","Symbole")]
+        self.listLayers = [("debordT","Point","Symbole"),("borne","Point","Symbole"),("clotureMit","Point","Symbole"),("murmitoyen","Ligne","Symbole"),("murnonmi","Ligne","Symbole"),("borne_retrouvee","Point","Symbole"),   ("biffer","Ligne","Symbole"),("MurDroite","Ligne","Dessin"),("Point","Point","Dessin"),("Texte","Point","Dessin"),("TexteOriente","Ligne","Dessin"),("MurMilieu","Ligne","Dessin"),("coteSURLigne","Ligne","Dessin"),("LigneDiscontinue","Ligne","Dessin"),("LigneContinue","Ligne","Dessin"),("cotesansligne","Ligne","Dessin"),("polygone","Polygone","Dessin"),("image","Point","Autre"),("HaieNonMit","Ligne","Symbole"),("Haiemit","Ligne","Symbole"),("Fossenonmit","Ligne","Symbole"),("FosseMit","Ligne","Symbole"),("Cloturenonmit","Ligne","Symbole"),("BornePolygo","Point","Symbole"),("clou","Point","Symbole"),("clouLimite","Ligne","Symbole"),("Coterepere","Ligne","Symbole"),("CroixGravee","Point","Symbole"),("RepereNivel","Ligne","Symbole")]
 
 
         #Fenetre mesure laser metre
@@ -370,6 +370,9 @@ class BnicNancy:
         #Liste contenant les plus proches objets
         self.layerData=[]
 
+        #Nombre de points pour la polyligne (infini=100)
+        self.nb_pts_poly=100
+
         #Outils
         #Tracer point
         self.canvas = self.iface.mapCanvas()
@@ -385,7 +388,7 @@ class BnicNancy:
         self.deleteTool = QgsMapToolEmitPoint(self.canvas)
 
         #tracer segment (2 pts)
-        self.segmentTool = SnappingMapToolEmitPoint(self.canvas)
+        # self.segmentTool = SnappingMapToolEmitPoint(self.canvas)
 
         #tracer arc (3 pts)
         self.arcTool = SnappingMapToolEmitPoint(self.canvas)
@@ -1057,18 +1060,18 @@ class BnicNancy:
 
 
 
-        #repere IGN
+        #repere Nivellement
         icon_path = ':/plugins/BnicNancy/icon46.png'
         self.add_action(
             icon_path,
-            text=self.tr('Repère IGN'),
-            callback=self.set_repereIGN_tool,
+            text=self.tr('Repère de Nivellement'),
+            callback=self.set_repereNivel_tool,
             parent=self.iface.mainWindow())
 
-        self.id_repereIGN=len(self.actions)-1
+        self.id_repereNivel=len(self.actions)-1
 
         #Bouton deroulant borne
-        boutonMenuBorne.addAction(self.actions[self.id_repereIGN])
+        boutonMenuBorne.addAction(self.actions[self.id_repereNivel])
 
 
 
@@ -1099,7 +1102,7 @@ class BnicNancy:
 
         self.deleteTool.canvasClicked.connect(self.delete_object)
 
-        self.segmentTool.snapClicked.connect(self.display_segment)
+        # self.segmentTool.snapClicked.connect(self.display_segment)
 
         self.punctualTool.snapClicked.connect(self.display_punctual)
 
@@ -1547,9 +1550,9 @@ class BnicNancy:
             self.iface.messageBar().pushMessage("La couche CroixGravee n'existe pas",level=Qgis.Critical, duration=3)
 
         try:
-            self.layerRepereIGN=QgsProject.instance().mapLayersByName("RepereIGN")[0]
+            self.layerRepereNivel=QgsProject.instance().mapLayersByName("RepereNivel")[0]
         except:
-            self.iface.messageBar().pushMessage("La couche RepereIGN n'existe pas",level=Qgis.Critical, duration=3)
+            self.iface.messageBar().pushMessage("La couche RepereNivel n'existe pas",level=Qgis.Critical, duration=3)
 
         try:
             self.layerCoteRepere=QgsProject.instance().mapLayersByName("Coterepere")[0]
@@ -1641,21 +1644,23 @@ class BnicNancy:
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = True
-        self.canvas.setMapTool(self.segmentTool)
+        self.nb_pts_poly=2
+        self.canvas.setMapTool(self.polyligneTool)
 
     def set_coteSansLigne_tool(self):
         self.currentLayer = self.layerCoteSansLigne
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = True
-        self.canvas.setMapTool(self.segmentTool)
+        self.nb_pts_poly=2
+        self.canvas.setMapTool(self.polyligneTool)
 
     def display_punctual(self, point, button):
 
         feat = QgsFeature()
         feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(point.x(),point.y())))
         self.currentLayer.dataProvider().addFeatures([feat])    #ajout du point sur le dessin #ne permet pas ctrl z
-
+        self.refresh_layer(self.currentLayer)
         self.currentLayer.commitChanges()
 
         if self.attribut:
@@ -1686,55 +1691,13 @@ class BnicNancy:
 
 
 
-    def display_segment(self, point, button):
-
-        #1er point
-        if len(self.pointList)==0:
-            pt=QgsPoint(point.x(),point.y())
-            self.pointList.append(pt)
-
-        #2e point
-        else:
-
-            feat = QgsFeature()
-            feat.setGeometry(QgsGeometry.fromPolyline([self.pointList[0], QgsPoint(point.x(),point.y())]))
-            self.currentLayer.dataProvider().addFeatures([feat])
-            self.refresh_layer(self.currentLayer)
-            self.pointList=[]
-            self.currentLayer.commitChanges()
-
-            if self.attribut:
-                for feature in self.currentLayer.getFeatures():
-                    ft=feature
-
-                #fenetre entrer cote
-                self.dlgAttribut.show()
-                self.dlgAttribut.lineedit_attribut.setFocus()
-
-
-                result = self.dlgAttribut.exec_()
-                # See if OK was pressed
-                if result:
-                    try:
-                        newValue=self.dlgAttribut.lineedit_attribut.value()
-                        print(newValue)
-
-                        attrs = {0 : newValue}
-                        self.currentLayer.dataProvider().changeAttributeValues({ ft.id() : attrs })
-                        self.refresh_layer(self.currentLayer)
-                        self.dlgAttribut.lineedit_attribut.clearValue()
-
-                    except:
-                        pass
-                else:
-                    self.currentLayer.dataProvider().deleteFeatures([ft.id()])
-                    self.refresh_layer(self.currentLayer)
-
-
 
     def add_point(self, point, button):
             pt=QgsPoint(point.x(),point.y())
             self.pointList.append(pt)
+
+            if len(self.pointList)==self.nb_pts_poly:
+                self.display_polyligne()
 
     def display_polyligne(self):
 
@@ -1996,6 +1959,7 @@ class BnicNancy:
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = True
+        self.nb_pts_poly=100
         self.canvas.setMapTool(self.polyligneTool)
 
     def set_murMilieu_tool(self):
@@ -2003,6 +1967,7 @@ class BnicNancy:
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = True
+        self.nb_pts_poly=100
         self.canvas.setMapTool(self.polyligneTool)
 
     def set_Texte_tool(self):
@@ -2017,7 +1982,8 @@ class BnicNancy:
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = True
-        self.canvas.setMapTool(self.segmentTool)
+        self.nb_pts_poly=2
+        self.canvas.setMapTool(self.polyligneTool)
 
     def set_debord_tool(self):
 
@@ -2107,42 +2073,48 @@ class BnicNancy:
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = False
-        self.canvas.setMapTool(self.segmentTool)
+        self.nb_pts_poly=2
+        self.canvas.setMapTool(self.polyligneTool)
 
     def set_murNonMitoyen_tool(self):
         self.currentLayer = self.layerMurNonMitoyen
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = False
-        self.canvas.setMapTool(self.segmentTool)
+        self.nb_pts_poly=2
+        self.canvas.setMapTool(self.polyligneTool)
 
     def set_haieMitoyen_tool(self):
         self.currentLayer = self.layerHaieMit
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = False
-        self.canvas.setMapTool(self.segmentTool)
+        self.nb_pts_poly=2
+        self.canvas.setMapTool(self.polyligneTool)
 
     def set_haieNonMitoyen_tool(self):
         self.currentLayer = self.layerHaieNonMit
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = False
-        self.canvas.setMapTool(self.segmentTool)
+        self.nb_pts_poly=2
+        self.canvas.setMapTool(self.polyligneTool)
 
     def set_fosseMitoyen_tool(self):
         self.currentLayer = self.layerFosseMit
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = False
-        self.canvas.setMapTool(self.segmentTool)
+        self.nb_pts_poly=2
+        self.canvas.setMapTool(self.polyligneTool)
 
     def set_fosseNonMitoyen_tool(self):
         self.currentLayer = self.layerFosseNonMit
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = False
-        self.canvas.setMapTool(self.segmentTool)
+        self.nb_pts_poly=2
+        self.canvas.setMapTool(self.polyligneTool)
 
     def set_clotureMitoyen_tool(self):
         self.currentLayer = self.layerClotureMit
@@ -2155,7 +2127,8 @@ class BnicNancy:
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = False
-        self.canvas.setMapTool(self.segmentTool)
+        self.nb_pts_poly=2
+        self.canvas.setMapTool(self.polyligneTool)
 
     def set_clou_tool(self):
         self.currentLayer = self.layerClou
@@ -2169,14 +2142,16 @@ class BnicNancy:
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = False
-        self.canvas.setMapTool(self.segmentTool)
+        self.nb_pts_poly=2
+        self.canvas.setMapTool(self.polyligneTool)
 
     def set_biffer_tool(self):
         self.currentLayer = self.layerBiffer
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = False
-        self.canvas.setMapTool(self.segmentTool)
+        self.nb_pts_poly=2
+        self.canvas.setMapTool(self.polyligneTool)
 
     def set_image_tool(self):
         self.currentLayer = self.layerImage
@@ -2197,19 +2172,22 @@ class BnicNancy:
         self.attribut = False
         self.canvas.setMapTool(self.punctualTool)
 
-    def set_repereIGN_tool(self):
-        self.currentLayer = self.layerRepereIGN
+    def set_repereNivel_tool(self):
+        self.currentLayer = self.layerRepereNivel
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = True
-        self.canvas.setMapTool(self.segmentTool)
+        self.nb_pts_poly=2
+        self.canvas.setMapTool(self.polyligneTool)
 
     def set_coteRepere_tool(self):
         self.currentLayer = self.layerCoteRepere
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.attribut = True
+        self.nb_pts_poly=3
         self.canvas.setMapTool(self.polyligneTool)
+
 
 
     def make_clavier_num(self,lineedit):
@@ -2281,9 +2259,15 @@ class BnicNancy:
 
     def identify_layer(self, point, button):
 
-        self.select_nearest_feature(point, button)
+        self.save_layers()
 
-        iface.messageBar().pushMessage(self.currentLayer.name(),level=Qgis.Info, duration=5)
+        obj = self.find_nearest_features(point, button)
+
+        if obj:
+            iface.messageBar().pushMessage(self.currentLayer.name(),level=Qgis.Info, duration=5)
+
+
+
 
 
 
@@ -2670,7 +2654,7 @@ class BnicNancy:
 
         self.canvas.unsetMapTool(self.modifTool)
         self.canvas.unsetMapTool(self.clickTool)
-        self.canvas.unsetMapTool(self.segmentTool)
+        # self.canvas.unsetMapTool(self.segmentTool)
         self.canvas.unsetMapTool(self.deleteTool)
         self.canvas.unsetMapTool(self.arcTool)
         self.canvas.unsetMapTool(self.debordTool)
@@ -2729,3 +2713,53 @@ class BnicNancy:
         #efface le texte des lineEdit
         self.dlg.lineedit_numin.clearValue()
         self.dlg.lineedit_inc.clearValue()
+
+
+
+
+
+
+    #Remplacer par display_polyligne
+    # def display_segment(self, point, button):
+    #
+    #     #1er point
+    #     if len(self.pointList)==0:
+    #         pt=QgsPoint(point.x(),point.y())
+    #         self.pointList.append(pt)
+    #
+    #     #2e point
+    #     else:
+    #
+    #         feat = QgsFeature()
+    #         feat.setGeometry(QgsGeometry.fromPolyline([self.pointList[0], QgsPoint(point.x(),point.y())]))
+    #         self.currentLayer.dataProvider().addFeatures([feat])
+    #         self.refresh_layer(self.currentLayer)
+    #         self.pointList=[]
+    #         self.currentLayer.commitChanges()
+    #
+    #         if self.attribut:
+    #             for feature in self.currentLayer.getFeatures():
+    #                 ft=feature
+    #
+    #             #fenetre entrer cote
+    #             self.dlgAttribut.show()
+    #             self.dlgAttribut.lineedit_attribut.setFocus()
+    #
+    #
+    #             result = self.dlgAttribut.exec_()
+    #             # See if OK was pressed
+    #             if result:
+    #                 try:
+    #                     newValue=self.dlgAttribut.lineedit_attribut.value()
+    #                     print(newValue)
+    #
+    #                     attrs = {0 : newValue}
+    #                     self.currentLayer.dataProvider().changeAttributeValues({ ft.id() : attrs })
+    #                     self.refresh_layer(self.currentLayer)
+    #                     self.dlgAttribut.lineedit_attribut.clearValue()
+    #
+    #                 except:
+    #                     pass
+    #             else:
+    #                 self.currentLayer.dataProvider().deleteFeatures([ft.id()])
+    #                 self.refresh_layer(self.currentLayer)
