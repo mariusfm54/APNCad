@@ -11,7 +11,7 @@ version=1.0.1
 author=Marius François-Marchal
 email=m.francois.marchal@gmail.com
 
-about=ADNCad est le fruit de la collaboration de la BNIC de Nancy et de Marius François-Marchal élève ingénieur ENSEM
+about=APNCad est le fruit de la collaboration de la BNIC de Nancy et de Marius François-Marchal élève ingénieur ENSEM
 
 # tracker=http://bugs
 repository=https://github.com/Va2sili/BnicNancy
