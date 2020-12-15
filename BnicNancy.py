@@ -212,7 +212,7 @@ class BnicNancy:
         self.rightClic.setText("CLIC DROIT")
         self.rightClicWidget=self.enterToolbar.addWidget(self.rightClic)
         self.rightClicWidget.setToolTip(self.tr('Clic droit'))
-        self.rightClic.clicked.connect(self.appui_entree)
+        self.rightClic.clicked.connect(self.clic_droit)
 
         #Widget toolbar touche echap
         self.toucheEchap = QPushButton(self.iface.mainWindow())
@@ -350,11 +350,9 @@ class BnicNancy:
 
 
         #Fenetre mesure laser metre
-        self.dist_laser=0
         self.dlgLaser = LasermDialog()
         self.dlgLaser.setFixedSize(632,178)
         self.dlgLaser.lineEdit_dist_horiz.setReadOnly(True)
-        # self.dlgLaser.lineEdit_dist_horiz.textChanged.connect(self.make_select_text(self.dlgLaser.lineEdit_dist))
         self.dlgLaser.lineEdit_dist.textChanged.connect(self.calcul_dist_horizon)
 
         #Fenetre recherche parcelle
@@ -374,14 +372,16 @@ class BnicNancy:
         self.nb_pts_poly=100
 
         #Outils
-        #Tracer point
+
         self.canvas = self.iface.mapCanvas()
+
+        #Tracer point
         self.clickTool = SnappingMapToolEmitPoint(self.canvas)
 
         #Pan (main)
         self.toolPan = QgsMapToolPan(self.canvas)
 
-        #modif point
+        #modif attribut
         self.modifTool=QgsMapToolEmitPoint(self.canvas)
 
         #delete point
@@ -404,9 +404,6 @@ class BnicNancy:
 
         #identifier couche
         self.identifyTool = QgsMapToolEmitPoint(self.canvas)
-
-        #translater feature
-        self.translateTool = QgsMapToolEmitPoint(self.canvas)
 
         #copier et translater feature
         self.copyTool = QgsMapToolEmitPoint(self.canvas)
@@ -1029,7 +1026,7 @@ class BnicNancy:
 
 
 
-        #action generer couche pour nouveau projet (menu uniquement)
+        #action reconstruire pojet (menu uniquement)
         icon_path=':/plugins/BnicNancy/icon44.png'
         self.add_action(
             icon_path,
@@ -1111,8 +1108,6 @@ class BnicNancy:
         self.debordTool.snapClicked.connect(self.display_debord)
 
         self.identifyTool.canvasClicked.connect(self.identify_layer)
-
-        self.translateTool.canvasClicked.connect(self.translate_copy_feature)
 
         self.copyTool.canvasClicked.connect(self.translate_copy_feature)
 
@@ -1565,15 +1560,15 @@ class BnicNancy:
         #initialisation widget texte dernier point
 
         #construit liste id points
-        listFeatures=[]
-        for feature in self.layerPoint.getFeatures():
-            listFeatures.append(feature.id())
-
         try:
+            listFeatures=[]
+            for feature in self.layerPoint.getFeatures():
+                listFeatures.append(feature.id())
+
             self.numPoint=self.layerPoint.getFeature(max(listFeatures)).attributes()[0]+1
             self.lastPoint.setText(str(self.numPoint))
         except:
-            #si nouveau projet : aucun point
+            #si nouveau projet : aucun point ou si la couche n'existe pas
             self.lastPoint.setText(str(self.numPoint))
 
         #activer tous les boutons (sauf annuler)
@@ -1808,7 +1803,7 @@ class BnicNancy:
 
 
     #valider polyligne
-    def appui_entree(self):
+    def clic_droit(self):
 
         if len(self.pointList)>0:
             self.display_polyligne()
@@ -1901,7 +1896,7 @@ class BnicNancy:
 
     def set_translation_tool(self):
         self.copy = False
-        self.canvas.setMapTool(self.translateTool)
+        self.canvas.setMapTool(self.copyTool)
         self.save_layers()
 
     def set_copy_tool(self):
@@ -2659,7 +2654,7 @@ class BnicNancy:
         self.canvas.unsetMapTool(self.arcTool)
         self.canvas.unsetMapTool(self.debordTool)
         self.canvas.unsetMapTool(self.identifyTool)
-        self.canvas.unsetMapTool(self.translateTool)
+        # self.canvas.unsetMapTool(self.translateTool)
         self.canvas.unsetMapTool(self.copyTool)
 
 
