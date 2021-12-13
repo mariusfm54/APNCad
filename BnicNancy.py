@@ -70,6 +70,7 @@ import sys
 import time
 import pyautogui
 import math as Maths
+import json
 
 
 class BnicNancy:
@@ -207,6 +208,12 @@ class BnicNancy:
         self.borneButton.setMenu(QMenu())
         self.borneButton.setPopupMode(QToolButton.MenuButtonPopup)
         self.borneButtonAction = self.symboleToolbar.addWidget(self.borneButton)
+
+        # Bouton deroulant piece jointe
+        self.pjButton = QToolButton()
+        self.pjButton.setMenu(QMenu())
+        self.pjButton.setPopupMode(QToolButton.MenuButtonPopup)
+        self.pjButtonAction = self.symboleToolbar.addWidget(self.pjButton)
 
         # Widget toolbar clic droit (stop trace polyligne)
         self.rightClic = QPushButton(self.iface.mainWindow())
@@ -354,8 +361,12 @@ class BnicNancy:
         # Fenetre choix SCR
         self.dlgCrs = CrsDialog()
         self.dlgCrs.setFixedSize(453, 190)
-        self.dlgCrs.comboBox_crs.addItems(
-            ['RGF93 / CC48   EPSG:3948', 'RGF93 / CC49   EPSG:3949', 'RGF93 / CC50   EPSG:3950'])
+        self.crsDict = {'RGF93 / CC43': 'EPSG:3943', 'RGF93 / CC44': 'EPSG:3944', 'RGF93 / CC45': 'EPSG:3945',
+                        'RGF93 / CC46': 'EPSG:3946', 'RGF93 / CC47': 'EPSG:3947', 'RGF93 / CC48': 'EPSG:3948',
+                        'RGF93 / CC49': 'EPSG:3949', 'RGF93 / CC50': 'EPSG:3950'}
+        for key in self.crsDict.keys():
+            self.dlgCrs.comboBox_crs.addItems([key])
+
         self.dlgCrs.lineEdit_path.setReadOnly(True)
         self.dlgCrs.pushButton_saveAs.clicked.connect(self.save_project)
 
@@ -377,7 +388,9 @@ class BnicNancy:
                            ("Cloturenonmit", "Ligne", "Symbole"), ("BornePolygo", "Point", "Symbole"),
                            ("clou", "Point", "Symbole"), ("clouLimite", "Ligne", "Symbole"),
                            ("Coterepere", "Ligne", "Symbole"), ("CroixGravee", "Point", "Symbole"),
-                           ("RepereNivel", "Ligne", "Symbole")]
+                           ("RepereNivel", "Ligne", "Symbole"), ("Das", "Point", "Autre"),
+                           ("puit", "Point", "Symbole"), ("PtDetail", "Point", "Symbole"),
+                           ("trottoir", "Ligne", "Dessin"), ("information", "Point", "Autre")]
 
         # Fenetre mesure laser metre
         self.dlgLaser = LasermDialog()
@@ -531,7 +544,7 @@ class BnicNancy:
 
         return action
 
-    def   initGui(self):
+    def initGui(self):
         """Create the menu entries and toolbar icons inside the QGIS GUI."""
 
         # tracer point
@@ -553,12 +566,6 @@ class BnicNancy:
             parent=self.iface.mainWindow())
 
         self.id_config_point = len(self.actions) - 1
-
-        # Bouton deroulant point
-        boutonMenuPoint = self.pointButton.menu()
-        boutonMenuPoint.addAction(self.actions[self.id_tracer_point])
-        self.pointButton.setDefaultAction(self.actions[self.id_tracer_point])  # action par default du bouton
-        boutonMenuPoint.addAction(self.actions[self.id_config_point])
 
         # Bouton delete object
         icon_path = ':/plugins/BnicNancy/icon9.png'
@@ -632,14 +639,6 @@ class BnicNancy:
 
         self.id_coteCourbe = len(self.actions) - 1
 
-        # Bouton deroulant cote
-        boutonMenuCote = self.coteButton.menu()
-        boutonMenuCote.addAction(self.actions[self.id_coteSurLigne])
-
-        self.coteButton.setDefaultAction(self.actions[self.id_coteCourbe])  # action par default du bouton
-        boutonMenuCote.addAction(self.actions[self.id_coteSansLigne])
-        boutonMenuCote.addAction(self.actions[self.id_coteCourbe])
-
         # bouton ligne continue
         icon_path = ':/plugins/BnicNancy/icon14.png'
         self.add_action(
@@ -659,13 +658,6 @@ class BnicNancy:
             parent=self.iface.mainWindow())
 
         self.id_ligneDiscontinue = len(self.actions) - 1
-
-        # Bouton deroulant lignes
-        boutonMenuLigne = self.ligneButton.menu()
-        boutonMenuLigne.addAction(self.actions[self.id_ligneContinue])
-
-        self.ligneButton.setDefaultAction(self.actions[self.id_ligneContinue])  # action par default du bouton
-        boutonMenuLigne.addAction(self.actions[self.id_ligneDiscontinue])
 
         # bouton Mur Droite
         icon_path = ':/plugins/BnicNancy/icon16.png'
@@ -687,12 +679,6 @@ class BnicNancy:
 
         self.id_murMilieu = len(self.actions) - 1
 
-        # Bouton deroulant murs
-        boutonMenuMur = self.murButton.menu()
-        boutonMenuMur.addAction(self.actions[self.id_murDroite])
-        self.murButton.setDefaultAction(self.actions[self.id_murDroite])  # action par default du bouton
-        boutonMenuMur.addAction(self.actions[self.id_murMilieu])
-
         # bouton Texte
         icon_path = ':/plugins/BnicNancy/icon18.png'
         self.add_action(
@@ -712,12 +698,6 @@ class BnicNancy:
             parent=self.iface.mainWindow())
 
         self.id_texteOriente = len(self.actions) - 1
-
-        # Bouton deroulant texte
-        boutonMenuTexte = self.texteButton.menu()
-        boutonMenuTexte.addAction(self.actions[self.id_texte])
-        self.texteButton.setDefaultAction(self.actions[self.id_texte])  # action par default du bouton
-        boutonMenuTexte.addAction(self.actions[self.id_texteOriente])
 
         # bouton Debord de toit
         icon_path = ':/plugins/BnicNancy/icon20.png'
@@ -751,12 +731,6 @@ class BnicNancy:
 
         self.id_borneRetrouvee = len(self.actions) - 1
 
-        # Bouton deroulant borne
-        boutonMenuBorne = self.borneButton.menu()
-        boutonMenuBorne.addAction(self.actions[self.id_borne])
-        self.borneButton.setDefaultAction(self.actions[self.id_borne])  # action par default du bouton
-        boutonMenuBorne.addAction(self.actions[self.id_borneRetrouvee])
-
         # bouton mur mitoyen
         icon_path = ':/plugins/BnicNancy/icon23.png'
         self.add_action(
@@ -777,12 +751,6 @@ class BnicNancy:
 
         self.id_murNonMitoyen = len(self.actions) - 1
 
-        # Bouton deroulant mur (symbole)
-        boutonMenuMurMit = self.murMitButton.menu()
-        boutonMenuMurMit.addAction(self.actions[self.id_murMitoyen])
-        self.murMitButton.setDefaultAction(self.actions[self.id_murMitoyen])  # action par default du bouton
-        boutonMenuMurMit.addAction(self.actions[self.id_murNonMitoyen])
-
         # cloture mit
         icon_path = ':/plugins/BnicNancy/icon25.png'
         self.add_action(
@@ -792,9 +760,6 @@ class BnicNancy:
             parent=self.iface.mainWindow())
 
         self.id_clotureMit = len(self.actions) - 1
-
-        # Ajout bouton deroulant
-        boutonMenuMurMit.addAction(self.actions[self.id_clotureMit])
 
         # bouton biffer
         icon_path = ':/plugins/BnicNancy/icon26.png'
@@ -814,8 +779,6 @@ class BnicNancy:
             icon_path,
             text=self.tr('Image'),
             callback=self.set_image_tool,
-            toolbar=self.symboleToolbar,
-            add_to_toolbar=True,
             parent=self.iface.mainWindow())
 
         self.id_image = len(self.actions) - 1
@@ -840,13 +803,7 @@ class BnicNancy:
 
         self.id_identifyLayer = len(self.actions) - 1
 
-        # Bouton deroulant couche
-        boutonMenuCouche = self.coucheButton.menu()
-        boutonMenuCouche.addAction(self.actions[self.id_panneauCouche])
-        self.coucheButton.setDefaultAction(self.actions[self.id_panneauCouche])  # action par default du bouton
-        boutonMenuCouche.addAction(self.actions[self.id_identifyLayer])
-
-        # bouton image
+        # bouton polygone
         icon_path = ':/plugins/BnicNancy/icon30.png'
         self.add_action(
             icon_path,
@@ -877,12 +834,6 @@ class BnicNancy:
             parent=self.iface.mainWindow())
 
         self.id_copier_feat = len(self.actions) - 1
-
-        # Bouton deroulant translation
-        boutonMenuTranslation = self.translationButton.menu()
-        boutonMenuTranslation.addAction(self.actions[self.id_translater_feat])
-        self.translationButton.setDefaultAction(self.actions[self.id_translater_feat])  # action par default du bouton
-        boutonMenuTranslation.addAction(self.actions[self.id_copier_feat])
 
         # choix SCR et enregistrer sous
         icon_path = ':/plugins/BnicNancy/icon34.png'
@@ -919,9 +870,6 @@ class BnicNancy:
 
         self.id_clotureNonMit = len(self.actions) - 1
 
-        # ajout au Bouton deroulant
-        boutonMenuMurMit.addAction(self.actions[self.id_clotureNonMit])
-
         # haie mit
         icon_path = ':/plugins/BnicNancy/icon36.png'
         self.add_action(
@@ -941,10 +889,6 @@ class BnicNancy:
             parent=self.iface.mainWindow())
 
         self.id_haieNonMit = len(self.actions) - 1
-
-        # Ajout menu deroulant
-        boutonMenuMurMit.addAction(self.actions[self.id_haieMit])
-        boutonMenuMurMit.addAction(self.actions[self.id_haieNonMit])
 
         # fosse mit
         icon_path = ':/plugins/BnicNancy/icon38.png'
@@ -966,10 +910,6 @@ class BnicNancy:
 
         self.id_fosseNonMit = len(self.actions) - 1
 
-        # Ajout menu deroulant
-        boutonMenuMurMit.addAction(self.actions[self.id_fosseMit])
-        boutonMenuMurMit.addAction(self.actions[self.id_fosseNonMit])
-
         # bouton borne polygone
         icon_path = ':/plugins/BnicNancy/icon40.png'
         self.add_action(
@@ -979,9 +919,6 @@ class BnicNancy:
             parent=self.iface.mainWindow())
 
         self.id_bornePolygo = len(self.actions) - 1
-
-        # Ajout menu deroulant
-        boutonMenuBorne.addAction(self.actions[self.id_bornePolygo])
 
         # clou
         icon_path = ':/plugins/BnicNancy/icon41.png'
@@ -1002,10 +939,6 @@ class BnicNancy:
             parent=self.iface.mainWindow())
 
         self.id_clouLimite = len(self.actions) - 1
-
-        # Bouton deroulant borne
-        boutonMenuBorne.addAction(self.actions[self.id_clou])
-        boutonMenuBorne.addAction(self.actions[self.id_clouLimite])
 
         # bouton rechercher parcelle
         icon_path = ':/plugins/BnicNancy/icon43.png'
@@ -1042,9 +975,6 @@ class BnicNancy:
 
         self.id_croixGravee = len(self.actions) - 1
 
-        # Bouton deroulant borne
-        boutonMenuBorne.addAction(self.actions[self.id_croixGravee])
-
         # repere Nivellement
         icon_path = ':/plugins/BnicNancy/icon46.png'
         self.add_action(
@@ -1055,9 +985,6 @@ class BnicNancy:
 
         self.id_repereNivel = len(self.actions) - 1
 
-        # Bouton deroulant borne
-        boutonMenuBorne.addAction(self.actions[self.id_repereNivel])
-
         # bouton cote repere
         icon_path = ':/plugins/BnicNancy/icon47.png'
         self.add_action(
@@ -1067,9 +994,6 @@ class BnicNancy:
             parent=self.iface.mainWindow())
 
         self.id_coteRepere = len(self.actions) - 1
-
-        # Bouton deroulant cote
-        boutonMenuCote.addAction(self.actions[self.id_coteRepere])
 
         # bouton visu couche text CroqRem
         icon_path = ':/plugins/BnicNancy/icon50.png'
@@ -1091,13 +1015,138 @@ class BnicNancy:
 
         self.id_visuOrtho = len(self.actions) - 1
 
+        # bouton Das
+        icon_path = ':/plugins/BnicNancy/icon52.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Das'),
+            callback=self.set_das_tool,
+            parent=self.iface.mainWindow())
 
+        self.id_das = len(self.actions) - 1
+
+        # bouton puit
+        icon_path = ':/plugins/BnicNancy/icon53.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Puit'),
+            callback=self.set_puit_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_puit = len(self.actions) - 1
+
+        # bouton ptDetail
+        icon_path = ':/plugins/BnicNancy/icon54.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Point Détail'),
+            callback=self.set_ptDetail_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_ptDetail = len(self.actions) - 1
+
+        # bouton trottoir
+        icon_path = ':/plugins/BnicNancy/icon55.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Trottoir'),
+            callback=self.set_trottoir_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_trottoir = len(self.actions) - 1
+
+        # bouton info
+        icon_path = ':/plugins/BnicNancy/icon56.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Information'),
+            callback=self.set_info_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_info = len(self.actions) - 1
+
+        # Bouton deroulant point
+        boutonMenuPoint = self.pointButton.menu()
+        boutonMenuPoint.addAction(self.actions[self.id_tracer_point])
+        self.pointButton.setDefaultAction(self.actions[self.id_tracer_point])  # action par default du bouton
+        boutonMenuPoint.addAction(self.actions[self.id_config_point])
+
+        # Bouton deroulant cote
+        boutonMenuCote = self.coteButton.menu()
+        boutonMenuCote.addAction(self.actions[self.id_coteSurLigne])
+        self.coteButton.setDefaultAction(self.actions[self.id_coteCourbe])  # action par default du bouton
+        boutonMenuCote.addAction(self.actions[self.id_coteSansLigne])
+        boutonMenuCote.addAction(self.actions[self.id_coteCourbe])
+        boutonMenuCote.addAction(self.actions[self.id_coteRepere])
+
+        # Bouton deroulant lignes
+        boutonMenuLigne = self.ligneButton.menu()
+        boutonMenuLigne.addAction(self.actions[self.id_ligneContinue])
+        self.ligneButton.setDefaultAction(self.actions[self.id_ligneContinue])  # action par default du bouton
+        boutonMenuLigne.addAction(self.actions[self.id_ligneDiscontinue])
+        boutonMenuLigne.addAction(self.actions[self.id_trottoir])
+
+        # Bouton deroulant murs
+        boutonMenuMur = self.murButton.menu()
+        boutonMenuMur.addAction(self.actions[self.id_murDroite])
+        self.murButton.setDefaultAction(self.actions[self.id_murDroite])  # action par default du bouton
+        boutonMenuMur.addAction(self.actions[self.id_murMilieu])
+
+        # Bouton deroulant texte
+        boutonMenuTexte = self.texteButton.menu()
+        boutonMenuTexte.addAction(self.actions[self.id_texte])
+        self.texteButton.setDefaultAction(self.actions[self.id_texte])  # action par default du bouton
+        boutonMenuTexte.addAction(self.actions[self.id_texteOriente])
+
+        # Bouton deroulant borne
+        boutonMenuBorne = self.borneButton.menu()
+        boutonMenuBorne.addAction(self.actions[self.id_borne])
+        self.borneButton.setDefaultAction(self.actions[self.id_borne])  # action par default du bouton
+        boutonMenuBorne.addAction(self.actions[self.id_borneRetrouvee])
+        boutonMenuBorne.addAction(self.actions[self.id_bornePolygo])
+        boutonMenuBorne.addAction(self.actions[self.id_clou])
+        boutonMenuBorne.addAction(self.actions[self.id_clouLimite])
+        boutonMenuBorne.addAction(self.actions[self.id_croixGravee])
+        boutonMenuBorne.addAction(self.actions[self.id_repereNivel])
+        boutonMenuBorne.addAction(self.actions[self.id_puit])
+        boutonMenuBorne.addAction(self.actions[self.id_ptDetail])
+
+        # Bouton deroulant mur (symbole)
+        boutonMenuMurMit = self.murMitButton.menu()
+        boutonMenuMurMit.addAction(self.actions[self.id_murMitoyen])
+        self.murMitButton.setDefaultAction(self.actions[self.id_murMitoyen])  # action par default du bouton
+        boutonMenuMurMit.addAction(self.actions[self.id_murNonMitoyen])
+        boutonMenuMurMit.addAction(self.actions[self.id_clotureMit])
+        boutonMenuMurMit.addAction(self.actions[self.id_clotureNonMit])
+        boutonMenuMurMit.addAction(self.actions[self.id_haieMit])
+        boutonMenuMurMit.addAction(self.actions[self.id_haieNonMit])
+        boutonMenuMurMit.addAction(self.actions[self.id_fosseMit])
+        boutonMenuMurMit.addAction(self.actions[self.id_fosseNonMit])
+
+        # Bouton deroulant couche
+        boutonMenuCouche = self.coucheButton.menu()
+        boutonMenuCouche.addAction(self.actions[self.id_panneauCouche])
+        self.coucheButton.setDefaultAction(self.actions[self.id_panneauCouche])  # action par default du bouton
+        boutonMenuCouche.addAction(self.actions[self.id_identifyLayer])
+
+        # Bouton deroulant translation
+        boutonMenuTranslation = self.translationButton.menu()
+        boutonMenuTranslation.addAction(self.actions[self.id_translater_feat])
+        self.translationButton.setDefaultAction(self.actions[self.id_translater_feat])  # action par default du bouton
+        boutonMenuTranslation.addAction(self.actions[self.id_copier_feat])
 
         # Bouton deroulant visu
         boutonMenuVisu = self.visuButton.menu()
         boutonMenuVisu.addAction(self.actions[self.id_visuCroqRem])
         self.visuButton.setDefaultAction(self.actions[self.id_visuCroqRem])  # action par default du bouton
         boutonMenuVisu.addAction(self.actions[self.id_visuOrtho])
+
+        # Bouton deroulant pj
+        boutonMenuPJ = self.pjButton.menu()
+        boutonMenuPJ.addAction(self.actions[self.id_image])
+        self.pjButton.setDefaultAction(self.actions[self.id_image])  # action par default du bouton
+        boutonMenuPJ.addAction(self.actions[self.id_das])
+        boutonMenuPJ.addAction(self.actions[self.id_info])
 
         # will be set False in run()
         self.first_start = True
@@ -1126,17 +1175,6 @@ class BnicNancy:
         # verifie la bonne connexion
         # QMessageBox.information(   self.iface.mainWindow(),"Info", "connect = %s"%str(result) )
 
-    def lire_crs(self, scr_choisi):
-        i = 0
-        nm = ""
-        np = scr_choisi[i]
-        while nm != " " or np != " ":
-            i += 1
-            nm = np
-            np = scr_choisi[i]
-        crs = scr_choisi[i + 2:]
-        return crs.split()[0]
-
     # remettre la fenetre au premier plan apres enregistrement
     def set_crs_on_top(self):
         if not self.dlgCrs.isHidden():
@@ -1154,7 +1192,7 @@ class BnicNancy:
 
         if result:
 
-            crs = self.lire_crs(str(self.dlgCrs.comboBox_crs.currentText()))
+            crs = self.crsDict[str(self.dlgCrs.comboBox_crs.currentText())]
             QgsProject.instance().setCrs(QgsCoordinateReferenceSystem(crs))
             print(crs)
             # si le projet a été enregistré
@@ -1207,6 +1245,9 @@ class BnicNancy:
                 layerFields.append(QgsField('ID', QVariant.Int))
             # elif couche[0]=="image":
             #     layerFields.append(QgsField('ID', QVariant.Image))
+            elif couche[0] == "Das":
+                layerFields.append(QgsField('ID', QVariant.String))
+                layerFields.append(QgsField('Fichier', QVariant.String))
             else:
                 layerFields.append(QgsField('ID', QVariant.String))
 
@@ -1232,7 +1273,7 @@ class BnicNancy:
             feat.setAttributes([1])
             writer.addFeature(feat)
             layer = self.iface.addVectorLayer(fn, '', 'ogr')
-            del (writer)
+            del(writer)
 
             # On supprime l'entite fictive ajoutee
             layer.dataProvider().deleteFeatures([0])
@@ -1246,7 +1287,6 @@ class BnicNancy:
             # ajout dans un groupe
             root = QgsProject.instance().layerTreeRoot()
             layerT = root.findLayer(layer.id())
-            clone = layerT.clone()
             parent = layerT.parent()
 
             if couche[2] == "Symbole":
@@ -1565,6 +1605,31 @@ class BnicNancy:
         except:
             self.iface.messageBar().pushMessage("La couche Coterepere n'existe pas", level=Qgis.Critical, duration=3)
 
+        try:
+            self.layerDas = QgsProject.instance().mapLayersByName("Das")[0]
+        except:
+            self.iface.messageBar().pushMessage("La couche Das n'existe pas", level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerPuit = QgsProject.instance().mapLayersByName("puit")[0]
+        except:
+            self.iface.messageBar().pushMessage("La couche puit n'existe pas", level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerPtDetail = QgsProject.instance().mapLayersByName("PtDetail")[0]
+        except:
+            self.iface.messageBar().pushMessage("La couche PtDetail n'existe pas", level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerTrottoir = QgsProject.instance().mapLayersByName("trottoir")[0]
+        except:
+            self.iface.messageBar().pushMessage("La couche trottoir n'existe pas", level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerInfo = QgsProject.instance().mapLayersByName("information")[0]
+        except:
+            self.iface.messageBar().pushMessage("La couche information n'existe pas", level=Qgis.Critical, duration=3)
+
         self.currentLayer = self.iface.activeLayer()
 
         # initialisation widget texte dernier point
@@ -1829,6 +1894,7 @@ class BnicNancy:
             rotation_new = rotation_actu + degree
             self.canvas.setRotation(rotation_new)
             self.canvas.refresh()
+
         return tourner
 
     # suppression objet
@@ -1941,7 +2007,6 @@ class BnicNancy:
         self.currentLayer.startEditing()
         self.iface.actionAddFeature().trigger()
         self.ligneButton.setDefaultAction(self.actions[self.id_ligneContinue])
-
 
     def set_ligneDiscontinue_tool(self):
         self.currentLayer = self.layerLigneDiscontinue
@@ -2177,6 +2242,7 @@ class BnicNancy:
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.iface.actionAddFeature().trigger()
+        self.pjButton.setDefaultAction(self.actions[self.id_image])
 
     def set_polygone_tool(self):
         self.currentLayer = self.layerPolygone
@@ -2209,6 +2275,43 @@ class BnicNancy:
         self.nb_pts_poly = 3
         self.canvas.setMapTool(self.polyligneTool)
         self.coteButton.setDefaultAction(self.actions[self.id_coteRepere])
+
+    def set_das_tool(self):
+        self.currentLayer = self.layerDas
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.iface.actionAddFeature().trigger()
+        self.pjButton.setDefaultAction(self.actions[self.id_das])
+
+    def set_puit_tool(self):
+        self.currentLayer = self.layerPuit
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.attribut = False
+        self.canvas.setMapTool(self.punctualTool)
+        self.borneButton.setDefaultAction(self.actions[self.id_puit])
+
+    def set_ptDetail_tool(self):
+        self.currentLayer = self.layerPtDetail
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.attribut = True
+        self.canvas.setMapTool(self.punctualTool)
+        self.borneButton.setDefaultAction(self.actions[self.id_ptDetail])
+
+    def set_trottoir_tool(self):
+        self.currentLayer = self.layerTrottoir
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.iface.actionAddFeature().trigger()
+        self.ligneButton.setDefaultAction(self.actions[self.id_trottoir])
+
+    def set_info_tool(self):
+        self.currentLayer = self.layerInfo
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.iface.actionAddFeature().trigger()
+        self.pjButton.setDefaultAction(self.actions[self.id_info])
 
     def make_clavier_num(self, lineedit):
         # necessary to call a function with parameters when button clavier is pressed
@@ -2305,34 +2408,39 @@ class BnicNancy:
 
     # montrer cacher texte croqrem
     def visu_textCroqRem(self):
+        self.visuButton.setDefaultAction(self.actions[self.id_visuCroqRem])
         # Get layer Text in group CroqRem
         root = QgsProject.instance().layerTreeRoot()
+        couche = None
         for lay in QgsProject.instance().mapLayersByName("Textes"):
             tree_layer = root.findLayer(lay.id())
             layer_parent = tree_layer.parent()
             if layer_parent.name() == "CroqRem":
                 couche = tree_layer
                 break
+        if couche is None:
+            return
+
         if couche.isVisible():
             couche.setItemVisibilityChecked(False)
         else:
             couche.setItemVisibilityChecked(True)
 
-        self.visuButton.setDefaultAction(self.actions[self.id_visuCroqRem])
-
     # montrer cacher Ortho
     def visu_Ortho(self):
+        self.visuButton.setDefaultAction(self.actions[self.id_visuOrtho])
+
         # Get layer Text in group Ortho
         root = QgsProject.instance().layerTreeRoot()
         group = root.findGroup("Ortho")
+
+        if group is None:
+            return
 
         if group.isVisible():
             group.setItemVisibilityChecked(False)
         else:
             group.setItemVisibilityChecked(True)
-
-        self.visuButton.setDefaultAction(self.actions[self.id_visuOrtho])
-
 
     # Rechercher parcelle
     def rechercher_parc(self):
@@ -2358,8 +2466,7 @@ class BnicNancy:
             parcelle = self.dlgParc.LineEdit_parc.value()
 
             # on complete eventuellement avec des 0
-            if len(parcelle) < 4:
-                parcelle = (4 - len(parcelle)) * '0' + parcelle
+            parcelle = parcelle.zfill(4)
 
             num_parc = section.upper() + parcelle
             print(num_parc)
@@ -2368,8 +2475,9 @@ class BnicNancy:
             for feature in layer.getFeatures():
                 if feature.attributes()[1] == "1PARCELLE":
                     # on recupere le code de la parcelle du feature
-                    num = feature.attributes()[2].split(":")[-1].replace(' ', '').replace('"', '').replace('}', '')
-                    if num[6:] == num_parc:
+                    dict = json.loads(feature.attributes()[2])
+                    num = dict["xdatas"]["IDU"]
+                    if num[-6:] == num_parc:
                         print('num: ', num)
                         layer.select(feature.id())
                         self.canvas.zoomToSelected()
