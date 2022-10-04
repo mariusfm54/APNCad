@@ -5,7 +5,6 @@
 [general]
 name=APNCad
 qgisMinimumVersion=3.0
-qgisMaximumVersion=3.20
 description=Applicatif destiné à la prise de notes sur tablette numérique lors des opérations de terrain réalisées pendant le remaniement cadatral
 version=1.0.3
 author=Marius François-Marchal
