@@ -2,10 +2,10 @@
 /***************************************************************************
  SnappingMapToolEmitPoint
                                  A QGIS plugin
- Applicatif destiné à la prise de notes sur tablette numérique lors des opérations de terrain réalisées pendant le remaniement cadatral
+ Applicatif destiné à la prise de notes sur tablette numérique lors des opérations de terrain réalisées pendant le remaniement cadastral
                              -------------------
         begin                : 2020-02-24
-        git sha              : https://github.com/Va2sili/BnicNancy
+        git sha              : https://github.com/mariusfm54/APNCad
         copyright            : (C) 2020 by Marius François-Marchal
         email                : m.francois.marchal@gmail.com
  ***************************************************************************/

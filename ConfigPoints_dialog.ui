@@ -108,17 +108,17 @@
     <string>Incrémentation:</string>
    </property>
   </widget>
-  <widget class="QPushButton" name="button_listePoint">
+  <widget class="QPushButton" name="button_resumeNum">
    <property name="geometry">
     <rect>
      <x>10</x>
      <y>80</y>
-     <width>111</width>
+     <width>141</width>
      <height>23</height>
     </rect>
    </property>
    <property name="text">
-    <string>Liste des Points</string>
+    <string>Reprendre Numérotation</string>
    </property>
   </widget>
   <widget class="QPushButton" name="pushButton_clavierNum">
@@ -155,6 +155,13 @@
    <header>qgsfilterlineedit.h</header>
   </customwidget>
  </customwidgets>
+ <tabstops>
+  <tabstop>lineedit_numin</tabstop>
+  <tabstop>lineedit_inc</tabstop>
+  <tabstop>pushButton_clavierNum</tabstop>
+  <tabstop>pushButton_clavierInc</tabstop>
+  <tabstop>button_resumeNum</tabstop>
+ </tabstops>
  <resources/>
  <connections>
   <connection>
