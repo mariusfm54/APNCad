@@ -2158,6 +2158,7 @@ class APNCad:
             else:
                 self.iface.messageBar().pushMessage("Cette couche ne possède pas d'action associée",
                                                     level=Qgis.Info, duration=4)
+        self.currentLayer.removeSelection()
 
     def set_translation_tool(self):
         self.copy = False
@@ -2483,8 +2484,7 @@ class APNCad:
         self.currentLayer = self.layerDas
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
-        self.attribut = True
-        self.canvas.setMapTool(self.punctualTool)
+        self.iface.actionAddFeature().trigger()
         self.pjButton.setDefaultAction(self.actions[self.id_das])
 
     def set_puit_tool(self):
@@ -2976,7 +2976,7 @@ class APNCad:
             # Loop through all features in the layer
             for f in layer.getFeatures():
                 dist = f.geometry().distance(QgsGeometry.fromPointXY(QgsPointXY(point.x(), point.y())))
-                if dist < 1 and dist > 0:
+                if 1 > dist > 0:
                     info = (layer, f.id(), dist)
                     self.layerData.append(info)
 
