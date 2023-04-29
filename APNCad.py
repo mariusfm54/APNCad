@@ -136,6 +136,10 @@ class APNCad:
         self.symboleToolbar = self.iface.addToolBar("APNCad Symbole")
         self.symboleToolbar.setObjectName("mSymboleToolBar")
 
+        # Toolbar CroquisDelim
+        self.croquisToolbar = self.iface.addToolBar("APNCad CroquisDelim")
+        self.croquisToolbar.setObjectName("mCroquisToolBar")
+
         # Toolbar entree et zoom
         self.enterToolbar = self.iface.addToolBar("APNCad Navigation")
         self.enterToolbar.setObjectName("mNavigationToolBar")
@@ -292,9 +296,26 @@ class APNCad:
         self.tournerGaucheWidget.setToolTip(self.tr('Rotation gauche'))
         self.bouttonTournerGauche.clicked.connect(self.make_tourner(-10))
 
-        # num et incrementation initiaux
+        # Widget toolbar lineedit dernier num parcelle
+        self.lastNumParc = QLineEdit(self.iface.mainWindow())
+        self.lastNumParc.setFixedWidth(80)
+        self.lastNumParc.setReadOnly(True)
+        self.lastNumParcWidget = self.croquisToolbar.addWidget(self.lastNumParc)
+        self.lastNumParcWidget.setToolTip(self.tr('Numéro parcelle'))
+
+        # Bouton deroulant num parcelle
+        self.numParcButton = QToolButton()
+        self.numParcButton.setMenu(QMenu())
+        self.numParcButton.setPopupMode(QToolButton.MenuButtonPopup)
+        self.numParcButtonAction = self.croquisToolbar.addWidget(self.numParcButton)
+
+        # num et incrementation initiaux Points
         self.numPoint = 0
         self.increment = 1
+
+        # num et incrementation initiaux Num Parcelle
+        self.numParc = 0
+        self.incParc = 1
 
         # Parametres polyligne
         # attribut sur le segment
@@ -303,7 +324,7 @@ class APNCad:
         # liste contenant coord points pour polyligne, translation
         self.pointList = []
 
-        # Variable bool copy lors de translation
+        # Variable bool copy for translation
         self.copy = True
 
         # clavier num
@@ -370,15 +391,26 @@ class APNCad:
             self.select_attribute_field(self.dlgImage.lineedit_attribut, self.dlgImage.comboBox_field))
 
         # Fenetre parametres point
-        self.dlg = ConfigPointsDialog()
-        self.dlg.setFixedSize(477, 141)  # empeche redimensionnement fenetre
-        self.dlg.pushButton_clavierNum.clicked.connect(self.make_clavier_num(self.dlg.lineedit_numin))
-        self.dlg.pushButton_clavierInc.clicked.connect(self.make_clavier_num(self.dlg.lineedit_inc))
-        self.dlg.button_resumeNum.clicked.connect(self.resume_num)
+        self.dlgConfigPt = ConfigPointsDialog()
+        self.dlgConfigPt.setFixedSize(477, 141)  # empeche redimensionnement fenetre
+        self.dlgConfigPt.pushButton_clavierNum.clicked.connect(self.make_clavier_num(self.dlgConfigPt.lineedit_numin))
+        self.dlgConfigPt.pushButton_clavierInc.clicked.connect(self.make_clavier_num(self.dlgConfigPt.lineedit_inc))
+        self.dlgConfigPt.button_resumeNum.clicked.connect(self.make_resume_num("point"))
+
+        # Fenetre parametres num parc
+        self.dlgNumParc = ConfigPointsDialog()
+        self.dlgNumParc.setFixedSize(477, 141)  # empeche redimensionnement fenetre
+        self.dlgNumParc.pushButton_clavierNum.clicked.connect(self.make_clavier_num(self.dlgNumParc.lineedit_numin))
+        self.dlgNumParc.pushButton_clavierInc.clicked.connect(self.make_clavier_num(self.dlgNumParc.lineedit_inc))
+        self.dlgNumParc.button_resumeNum.clicked.connect(self.make_resume_num("parcelle"))
 
         # Fenetre liste points
         self.dlgListe = ListePointDialog()
         self.dlgListe.setFixedSize(322, 352)
+
+        # Fenetre liste points
+        self.dlgListeParc = ListePointDialog()
+        self.dlgListeParc.setFixedSize(322, 352)
 
         # Fenetre choix SCR
         self.dlgCrs = CrsDialog()
@@ -445,7 +477,10 @@ class APNCad:
                            ("Coterepere", "Ligne", "Dessin"), ("CroixGravee", "Point", "Symbole"),
                            ("RepereNivel", "Ligne", "Symbole"), ("Das", "Point", "Autre"),
                            ("puit", "Point", "Symbole"), ("PtDetail", "Point", "Symbole"),
-                           ("trottoir", "Ligne", "Dessin"), ("information", "Point", "Autre")]
+                           ("trottoir", "Ligne", "Dessin"), ("information", "Point", "Autre"),
+                           ("Numparc", "Point", "CroquisDelim"), ("GrandTexte", "Point", "CroquisDelim"),
+                           ("Fiscalite", "Ligne", "CroquisDelim"), ("LimiteCommune", "Ligne", "CroquisDelim"),
+                           ("LimiteSection", "Ligne", "CroquisDelim"), ("LimiteLieuDit", "Ligne", "CroquisDelim")]
 
         # Fenetre mesure laser metre
         self.dlgLaser = LasermDialog()
@@ -470,47 +505,62 @@ class APNCad:
         self.nb_pts_poly = 100
 
         # Outils
-
         self.canvas = self.iface.mapCanvas()
 
         # Tracer point
         self.clickTool = SnappingMapToolEmitPoint(self.canvas)
+        self.clickTool.snapClicked.connect(self.display_point)
+
+        # Tracer num parc
+        self.numParcTool = SnappingMapToolEmitPoint(self.canvas)
+        self.numParcTool.snapClicked.connect(self.display_numParc)
 
         # Pan (main)
         self.toolPan = QgsMapToolPan(self.canvas)
 
         # modif attribut
         self.modifTool = QgsMapToolEmitPoint(self.canvas)
+        self.modifTool.canvasClicked.connect(self.modify_attribute)
 
         # delete point
         self.deleteTool = QgsMapToolEmitPoint(self.canvas)
+        self.deleteTool.canvasClicked.connect(self.delete_object)
 
         # tracer segment (2 pts)
         # self.segmentTool = SnappingMapToolEmitPoint(self.canvas)
+        # self.segmentTool.snapClicked.connect(self.display_segment)
 
         # tracer arc (3 pts)
         self.arcTool = SnappingMapToolEmitPoint(self.canvas)
+        self.arcTool.snapClicked.connect(self.display_cote_courbe)
 
         # tracer polyligne
         self.polyligneTool = SnappingMapToolEmitPoint(self.canvas)
+        self.polyligneTool.snapClicked.connect(self.add_point)
 
         # tracer entite ponctuelle (1 pt)
         self.punctualTool = SnappingMapToolEmitPoint(self.canvas)
+        self.punctualTool.snapClicked.connect(self.display_punctual)
 
         # tracer debord
         self.debordTool = SnappingMapToolEmitPoint(self.canvas)
+        self.debordTool.snapClicked.connect(self.display_debord)
 
         # identifier couche
         self.identifyTool = QgsMapToolEmitPoint(self.canvas)
+        self.identifyTool.canvasClicked.connect(self.identify_layer)
 
         # freeze couche
         self.freezeTool = QgsMapToolEmitPoint(self.canvas)
+        self.freezeTool.canvasClicked.connect(self.freeze_layer)
 
         # copier et translater feature
         self.copyTool = QgsMapToolEmitPoint(self.canvas)
+        self.copyTool.canvasClicked.connect(self.translate_copy_feature)
 
         # declencher action
         self.actionTool = QgsMapToolEmitPoint(self.canvas)
+        self.actionTool.canvasClicked.connect(self.trigger_action)
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -623,7 +673,7 @@ class APNCad:
         self.add_action(
             icon_path,
             text=self.tr(u'Configurer points'),
-            callback=self.run,
+            callback=self.config_point,
             parent=self.iface.mainWindow())
 
         self.id_config_point = len(self.actions) - 1
@@ -1158,6 +1208,108 @@ class APNCad:
 
         self.id_triggerAction = len(self.actions) - 1
 
+        # tracer num parc
+        icon_path = ':/plugins/APNCad/icon60.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Tracer numéro de parcelle'),
+            callback=self.set_numParc_tool,
+            parent=self.iface.mainWindow())
+
+        self.id_tracer_numParc = len(self.actions) - 1
+
+        # configurer num parc
+        icon_path = ':/plugins/APNCad/icon61.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Configurer numéros de parcelle'),
+            callback=self.config_numParc,
+            parent=self.iface.mainWindow())
+
+        self.id_config_numParc = len(self.actions) - 1
+
+        # bouton ouvrir table attribut couche Numparc
+        icon_path = ':/plugins/APNCad/icon62.png'
+        self.add_action(
+            icon_path,
+            text=self.tr("Ouvrir la table d'attributs de Numparc"),
+            callback=self.open_numParc_attribute_table,
+            parent=self.iface.mainWindow())
+
+        self.id_openNumParcAttributeTab = len(self.actions) - 1
+
+        # bouton annuler dernier num parc
+        icon_path = ':/plugins/APNCad/icon63.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Annuler numéro de parcelle'),
+            callback=self.cancel_numParc,
+            toolbar=self.croquisToolbar,
+            add_to_toolbar=True,
+            parent=self.iface.mainWindow())
+
+        self.id_cancel_numParc = len(self.actions) - 1
+
+        # bouton LimiteCommune
+        icon_path = ':/plugins/APNCad/icon64.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Tracer une commune'),
+            callback=self.set_limiteCommune_tool,
+            toolbar=self.croquisToolbar,
+            add_to_toolbar=True,
+            parent=self.iface.mainWindow())
+
+        self.id_limiteCommune = len(self.actions) - 1
+
+        # bouton LimiteSection
+        icon_path = ':/plugins/APNCad/icon65.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Tracer une section'),
+            callback=self.set_limiteSection_tool,
+            toolbar=self.croquisToolbar,
+            add_to_toolbar=True,
+            parent=self.iface.mainWindow())
+
+        self.id_limiteSection = len(self.actions) - 1
+
+        # bouton LimiteLieudit
+        icon_path = ':/plugins/APNCad/icon66.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Tracer un lieu-dit'),
+            callback=self.set_limiteLieudit_tool,
+            toolbar=self.croquisToolbar,
+            add_to_toolbar=True,
+            parent=self.iface.mainWindow())
+
+        self.id_limiteLieudit = len(self.actions) - 1
+
+        # bouton fiscalite
+        icon_path = ':/plugins/APNCad/icon67.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Tracer une fiscalite'),
+            callback=self.set_fiscalite_tool,
+            toolbar=self.croquisToolbar,
+            add_to_toolbar=True,
+            parent=self.iface.mainWindow())
+
+        self.id_fiscalite = len(self.actions) - 1
+
+        # bouton GrandTexte
+        icon_path = ':/plugins/APNCad/icon68.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Tracer un grand texte'),
+            callback=self.set_grandTexte_tool,
+            toolbar=self.croquisToolbar,
+            add_to_toolbar=True,
+            parent=self.iface.mainWindow())
+
+        self.id_grandTexte = len(self.actions) - 1
+
         # Bouton deroulant point
         boutonMenuPoint = self.pointButton.menu()
         boutonMenuPoint.addAction(self.actions[self.id_tracer_point])
@@ -1243,33 +1395,15 @@ class APNCad:
         boutonMenuPJ.addAction(self.actions[self.id_das])
         boutonMenuPJ.addAction(self.actions[self.id_info])
 
-        # will be set False in run()
+        # Bouton deroulant num parc
+        boutonMenuNumParc = self.numParcButton.menu()
+        boutonMenuNumParc.addAction(self.actions[self.id_tracer_numParc])
+        self.numParcButton.setDefaultAction(self.actions[self.id_tracer_numParc])  # action par default du bouton
+        boutonMenuNumParc.addAction(self.actions[self.id_config_numParc])
+        boutonMenuNumParc.addAction(self.actions[self.id_openNumParcAttributeTab])
+
+        # will be set False in config_point()
         self.first_start = True
-
-        # connexion outils-fonctions lorsque clic
-        self.clickTool.snapClicked.connect(self.display_point)
-
-        self.modifTool.canvasClicked.connect(self.modify_attribute)
-
-        self.deleteTool.canvasClicked.connect(self.delete_object)
-
-        # self.segmentTool.snapClicked.connect(self.display_segment)
-
-        self.punctualTool.snapClicked.connect(self.display_punctual)
-
-        self.arcTool.snapClicked.connect(self.display_cote_courbe)
-
-        self.debordTool.snapClicked.connect(self.display_debord)
-
-        self.identifyTool.canvasClicked.connect(self.identify_layer)
-
-        self.freezeTool.canvasClicked.connect(self.freeze_layer)
-
-        self.copyTool.canvasClicked.connect(self.translate_copy_feature)
-
-        self.polyligneTool.snapClicked.connect(self.add_point)
-
-        self.actionTool.canvasClicked.connect(self.trigger_action)
 
         # verifie la bonne connexion
         # QMessageBox.information(   self.iface.mainWindow(),"Info", "connect = %s"%str(result) )
@@ -1322,6 +1456,7 @@ class APNCad:
         symbole = cad_dessin.addGroup("Symboles")
         dessin = cad_dessin.addGroup("Dessin")
         autre = cad_dessin.addGroup("Autres")
+        croquisDelim = cad_dessin.addGroup("CroquisDelim")
 
         croqrem = root.addGroup("CroqRem")  # group croqrem
         restit = root.addGroup("Restit")
@@ -1393,13 +1528,17 @@ class APNCad:
                 # ajout au groupe
                 symbole.insertChildNode(0, QgsLayerTreeLayer(layer))
 
-            if couche[2] == "Dessin":
+            elif couche[2] == "Dessin":
                 # ajout au groupe
                 dessin.insertChildNode(0, QgsLayerTreeLayer(layer))
 
-            if couche[2] == "Autre":
+            elif couche[2] == "Autre":
                 # ajout au groupe
                 autre.insertChildNode(0, QgsLayerTreeLayer(layer))
+
+            elif couche[2] == "CroquisDelim":
+                # ajout au groupe
+                croquisDelim.insertChildNode(0, QgsLayerTreeLayer(layer))
 
             # suppression de la couche initiale
             parent.removeChildNode(layerT)
@@ -1417,12 +1556,29 @@ class APNCad:
         # repertoire projet
         pathProj = QFileInfo(QgsProject.instance().fileName()).absolutePath()
 
-        # recuperation des groupes
+        # recuperation des groupes ou creation si inexistants
         root = QgsProject.instance().layerTreeRoot()
         cad_dessin = root.findGroup("Cad_Dessin")  # groupe principal
-        symbole = cad_dessin.findGroup("Symboles")
-        dessin = cad_dessin.findGroup("Dessin")
-        autre = cad_dessin.findGroup("Autres")
+        if cad_dessin is None:
+            cad_dessin = root.addGroup("Cad_Dessin")
+            symbole = cad_dessin.addGroup("Symboles")
+            dessin = cad_dessin.addGroup("Dessin")
+            autre = cad_dessin.addGroup("Autres")
+            croquisDelim = cad_dessin.addGroup("CroquisDelim")
+        else:
+            symbole = cad_dessin.findGroup("Symboles")
+            dessin = cad_dessin.findGroup("Dessin")
+            autre = cad_dessin.findGroup("Autres")
+            croquisDelim = cad_dessin.findGroup("CroquisDelim")
+
+        if symbole is None:
+            symbole = cad_dessin.addGroup("Symboles")
+        if dessin is None:
+            dessin = cad_dessin.addGroup("Dessin")
+        if autre is None:
+            autre = cad_dessin.addGroup("Autres")
+        if croquisDelim is None:
+            croquisDelim = cad_dessin.addGroup("CroquisDelim")
 
         # nombre de couches ajoutees
         compteur = 0
@@ -1502,18 +1658,20 @@ class APNCad:
                         # ajout au groupe
                         symbole.insertChildNode(0, QgsLayerTreeLayer(layer))
 
-                    if couche[2] == "Dessin":
+                    elif couche[2] == "Dessin":
                         # ajout au groupe
                         dessin.insertChildNode(0, QgsLayerTreeLayer(layer))
 
-                    if couche[2] == "Autre":
+                    elif couche[2] == "Autre":
                         # ajout au groupe
                         autre.insertChildNode(0, QgsLayerTreeLayer(layer))
 
+                    elif couche[2] == "CroquisDelim":
+                        # ajout au groupe
+                        croquisDelim.insertChildNode(0, QgsLayerTreeLayer(layer))
+
                     # suppression de la couche initiale
                     parent.removeChildNode(layerT)
-
-
 
                 # le fichier build_shp existe deja (la couche a été manuellement renommée: on ne veut pas l'ecraser)
                 else:
@@ -1539,13 +1697,17 @@ class APNCad:
                         # ajout au groupe
                         symbole.insertChildNode(0, QgsLayerTreeLayer(layer))
 
-                    if couche[2] == "Dessin":
+                    elif couche[2] == "Dessin":
                         # ajout au groupe
                         dessin.insertChildNode(0, QgsLayerTreeLayer(layer))
 
-                    if couche[2] == "Autre":
+                    elif couche[2] == "Autre":
                         # ajout au groupe
                         autre.insertChildNode(0, QgsLayerTreeLayer(layer))
+
+                    elif couche[2] == "CroquisDelim":
+                        # ajout au groupe
+                        croquisDelim.insertChildNode(0, QgsLayerTreeLayer(layer))
 
                     # suppression de la couche initiale
                     parent.removeChildNode(layerT)
@@ -1773,10 +1935,45 @@ class APNCad:
             print(e)
             self.iface.messageBar().pushMessage("La couche information n'existe pas", level=Qgis.Critical, duration=3)
 
+        try:
+            self.layerNumParc = QgsProject.instance().mapLayersByName("Numparc")[0]
+        except Exception as e:
+            print(e)
+            self.iface.messageBar().pushMessage("La couche Numparc n'existe pas", level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerGrandTexte = QgsProject.instance().mapLayersByName("GrandTexte")[0]
+        except Exception as e:
+            print(e)
+            self.iface.messageBar().pushMessage("La couche GrandTexte n'existe pas", level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerFisc = QgsProject.instance().mapLayersByName("Fiscalite")[0]
+        except Exception as e:
+            print(e)
+            self.iface.messageBar().pushMessage("La couche Fiscalite n'existe pas", level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerLimiteCom = QgsProject.instance().mapLayersByName("LimiteCommune")[0]
+        except Exception as e:
+            print(e)
+            self.iface.messageBar().pushMessage("La couche LimiteCommune n'existe pas", level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerLimiteSec = QgsProject.instance().mapLayersByName("LimiteSection")[0]
+        except Exception as e:
+            print(e)
+            self.iface.messageBar().pushMessage("La couche LimiteSection n'existe pas", level=Qgis.Critical, duration=3)
+
+        try:
+            self.layerLimiteLieudit = QgsProject.instance().mapLayersByName("LimiteLieuDit")[0]
+        except Exception as e:
+            print(e)
+            self.iface.messageBar().pushMessage("La couche LimiteLieuDit n'existe pas", level=Qgis.Critical, duration=3)
+
         self.currentLayer = self.iface.activeLayer()
 
         # initialisation widget texte dernier point
-
         # construit liste id points
         try:
             listFeatures = []
@@ -1790,9 +1987,23 @@ class APNCad:
             # si nouveau projet : aucun point ou si la couche n'existe pas
             self.lastPoint.setText(str(self.numPoint))
 
-        # activer tous les boutons (sauf annuler)
+        # initialisation widget texte dernier num parc
+        # construit liste id num parc
+        try:
+            listFeatures = []
+            for feature in self.layerNumParc.getFeatures():
+                listFeatures.append(feature.id())
+
+            self.numParc = self.layerNumParc.getFeature(max(listFeatures)).attributes()[0] + 1
+            self.lastNumParc.setText(str(self.numParc))
+        except Exception as e:
+            print(e)
+            # si nouveau projet : aucun point ou si la couche n'existe pas
+            self.lastNumParc.setText(str(self.numParc))
+
+        # activer tous les boutons (sauf annuler pt et numParc)
         for i in range(len(self.actions)):
-            if i != self.id_cancel and i != self.id_generate_layer:
+            if i != self.id_cancel and i != self.id_generate_layer and i != self.id_cancel_numParc:
                 self.actions[i].setEnabled(True)
 
         # desactiver bouton start
@@ -1824,6 +2035,39 @@ class APNCad:
 
         self.refresh_layer(self.currentLayer)
 
+    def config_point(self):
+        if self.first_start:
+            self.first_start = False
+
+        # show the dialog
+        self.dlgConfigPt.show()
+        # select premiere zone de saisie
+        self.dlgConfigPt.lineedit_numin.setFocus()
+        # Run the dialog event loop
+        result = self.dlgConfigPt.exec_()
+        # See if OK was pressed
+        if result:
+            try:
+                self.numPoint = int(self.dlgConfigPt.lineedit_numin.value())
+            except Exception as e:
+                print(e)
+                pass
+            try:
+                inc = self.increment
+                self.increment = int(self.dlgConfigPt.lineedit_inc.value())
+                self.numPoint -= inc
+                self.numPoint += self.increment
+
+            except Exception as e:
+                print(e)
+                pass
+
+            self.lastPoint.setText(str(self.numPoint))
+
+        # efface le texte des lineEdit
+        self.dlgConfigPt.lineedit_numin.clearValue()
+        self.dlgConfigPt.lineedit_inc.clearValue()
+
     def open_attribute_table(self):
         self.iface.showAttributeTable(self.layerPoint)
 
@@ -1846,6 +2090,119 @@ class APNCad:
         # aucun point dans la couche
         else:
             self.actions[self.id_cancel].setEnabled(False)
+
+    # Tracer num parc
+    def set_numParc_tool(self):
+        self.currentLayer = self.layerNumParc
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.canvas.setMapTool(self.numParcTool)
+
+    def display_numParc(self, point, button):
+
+        feat = QgsFeature()
+        feat.setAttributes([self.numParc])
+        feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(point.x(), point.y())))
+        self.currentLayer.dataProvider().addFeatures([feat])  # ajout du numParc sur le dessin #ne permet pas ctrl z
+
+        self.currentLayer.commitChanges()
+
+        # autoriser annulation
+        self.actions[self.id_cancel_numParc].setEnabled(True)
+
+        # actualisation num suivant
+
+        self.numParc += self.incParc
+        self.lastNumParc.setText(str(self.numParc))
+
+        self.refresh_layer(self.currentLayer)
+
+    def config_numParc(self):
+        self.dlgNumParc.show()
+        self.dlgNumParc.lineedit_numin.setFocus()
+        result = self.dlgNumParc.exec_()
+        if result:
+            try:
+                self.numParc = int(self.dlgNumParc.lineedit_numin.value())
+            except Exception as e:
+                print(e)
+                pass
+            try:
+                inc = self.incParc
+                self.incParc = int(self.dlgNumParc.lineedit_inc.value())
+                self.numParc -= inc
+                self.numParc += self.incParc
+
+            except Exception as e:
+                print(e)
+                pass
+            self.lastNumParc.setText(str(self.numParc))
+
+        # efface le texte des lineEdit
+        self.dlgNumParc.lineedit_numin.clearValue()
+        self.dlgNumParc.lineedit_inc.clearValue()
+
+    def open_numParc_attribute_table(self):
+        self.iface.showAttributeTable(self.layerNumParc)
+
+    # erase last displayed point
+    def cancel_numParc(self):
+
+        lastFeatureId = -1
+
+        # Loop through all features in the layer
+        for f in self.layerNumParc.getFeatures():
+            if f.id() > lastFeatureId:
+                lastFeatureId = f.id()
+
+        if lastFeatureId >= 0:
+            self.layerNumParc.dataProvider().deleteFeatures([lastFeatureId])
+            self.refresh_layer(self.layerNumParc)
+            self.numParc = self.numParc - self.incParc
+            self.lastNumParc.setText(str(self.numParc))
+
+        # aucun numParc dans la couche
+        else:
+            self.actions[self.id_cancel_numParc].setEnabled(False)
+
+    def set_limiteCommune_tool(self):
+        self.currentLayer = self.layerLimiteCom
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.attribut = False
+        self.nb_pts_poly = 100
+        self.canvas.setMapTool(self.polyligneTool)
+
+    def set_limiteSection_tool(self):
+        self.currentLayer = self.layerLimiteSec
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.attribut = False
+        self.nb_pts_poly = 100
+        self.canvas.setMapTool(self.polyligneTool)
+
+    def set_limiteLieudit_tool(self):
+        self.currentLayer = self.layerLimiteLieudit
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.attribut = False
+        self.nb_pts_poly = 100
+        self.canvas.setMapTool(self.polyligneTool)
+
+    def set_fiscalite_tool(self):
+        self.currentLayer = self.layerFisc
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.attribut = False
+        self.nb_pts_poly = 100
+        self.canvas.setMapTool(self.polyligneTool)
+
+    def set_grandTexte_tool(self):
+        self.currentLayer = self.layerGrandTexte
+        self.iface.setActiveLayer(self.currentLayer)
+        self.currentLayer.startEditing()
+        self.attribut = True
+        self.canvas.setMapTool(self.punctualTool)
 
     # Tracer cote
     def set_coteSurLigne_tool(self):
@@ -3069,12 +3426,24 @@ class APNCad:
             self.dlgListe.listNumPoint.insertRow(i)
             self.dlgListe.listNumPoint.setCellWidget(i, 0, QLineEdit(str(listPoint[i])))
 
-    def resume_num(self):
-        max_num = self.layerPoint.maximumValue(0)
+    def make_resume_num(self, tool):
 
-        if max_num is not None:
-            self.dlg.lineedit_numin.clearValue()
-            self.dlg.lineedit_numin.setText(str(max_num + 1))
+        def resume_num():
+            layer = None
+            dlg = None
+            if tool == "point":
+                layer = self.layerPoint
+                dlg = self.dlgConfigPt
+            elif tool == "parcelle":
+                layer = self.layerParc
+                dlg = self.dlgNumParc
+
+            max_num = layer.maximumValue(0)
+            if max_num is not None:
+                dlg.lineedit_numin.clearValue()
+                dlg.lineedit_numin.setText(str(max_num + 1))
+
+        return resume_num
 
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
@@ -3113,6 +3482,8 @@ class APNCad:
         # parent4.removeToolBar(self.symboleToolbar)
         self.symboleToolbar.deleteLater()
 
+        self.croquisToolbar.clear()
+        self.croquisToolbar.deleteLater()
         # self.iface.removeToolBarIcon(self.toolBtnAction)
         # self.iface.removeToolBarIcon(self.coteButtonAction)
         # self.iface.removeToolBarIcon(self.murButtonAction)
@@ -3136,95 +3507,5 @@ class APNCad:
         self.canvas.unsetMapTool(self.polyligneTool)
         self.canvas.unsetMapTool(self.punctualTool)
         self.canvas.unsetMapTool(self.actionTool)
+        self.canvas.unsetMapTool(self.numParcTool)
 
-    def run(self):
-
-        # Create the dialog with elements (after translation) and keep reference
-        # Only create GUI ONCE in callback, so that it will only load when the plugin is started
-        if self.first_start:
-            self.first_start = False
-
-        # show the dialog
-        self.dlg.show()
-
-        # selecte premiere zone de saisie
-        self.dlg.lineedit_numin.setFocus()
-
-        # remplit la zone de texte avec le point max
-        # self.max_Point()
-        # self.dlg.lineedit_numac.setReadOnly(True)
-        # self.dlg.lineedit_numac.setText(str(self.pointmax))
-
-        # Run the dialog event loop
-        result = self.dlg.exec_()
-        # See if OK was pressed
-
-        if result:
-
-            try:
-                self.numPoint = int(self.dlg.lineedit_numin.value())
-
-            except Exception as e:
-                print(e)
-                pass
-
-            try:
-                inc = self.increment
-                self.increment = int(self.dlg.lineedit_inc.value())
-                self.numPoint -= inc
-                self.numPoint += self.increment
-
-            except Exception as e:
-                print(e)
-                pass
-
-            self.lastPoint.setText(str(self.numPoint))
-
-        # efface le texte des lineEdit
-        self.dlg.lineedit_numin.clearValue()
-        self.dlg.lineedit_inc.clearValue()
-
-    # Remplacer par display_polyligne
-    # def display_segment(self, point, button):
-    #
-    #     #1er point
-    #     if len(self.pointList)==0:
-    #         pt=QgsPoint(point.x(),point.y())
-    #         self.pointList.append(pt)
-    #
-    #     #2e point
-    #     else:
-    #
-    #         feat = QgsFeature()
-    #         feat.setGeometry(QgsGeometry.fromPolyline([self.pointList[0], QgsPoint(point.x(),point.y())]))
-    #         self.currentLayer.dataProvider().addFeatures([feat])
-    #         self.refresh_layer(self.currentLayer)
-    #         self.pointList=[]
-    #         self.currentLayer.commitChanges()
-    #
-    #         if self.attribut:
-    #             for feature in self.currentLayer.getFeatures():
-    #                 ft=feature
-    #
-    #             #fenetre entrer cote
-    #             self.dlgAttribut.show()
-    #             self.dlgAttribut.lineedit_attribut.setFocus()
-    #
-    #
-    #             result = self.dlgAttribut.exec_()
-    #             # See if OK was pressed
-    #             if result:
-    #                 try:
-    #                     newValue=self.dlgAttribut.lineedit_attribut.value()
-    #                     print(newValue)
-    #
-    #                     attrs = {0 : newValue}
-    #                     self.currentLayer.dataProvider().changeAttributeValues({ ft.id() : attrs })
-    #                     self.refresh_layer(self.currentLayer)
-    #                     self.dlgAttribut.lineedit_attribut.clearValue()
-    #
-    #                 except:
-    #                     pass
-    #             else:
-    #                 self.currentLayer.dataProvider().deleteFeatures([ft.id()])
-    #                 self.refresh_layer(self.currentLayer)
