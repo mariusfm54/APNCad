@@ -25,16 +25,17 @@ from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QFileInfo
 from qgis.PyQt.QtGui import QIcon, QCursor
 from qgis.PyQt.QtWidgets import QAction, QMessageBox, QDockWidget, QFileDialog
 from qgis.utils import iface
-from qgis.gui import QgsMapToolEmitPoint, QgsMapToolPan
-from .SnappingMapTool import SnappingMapToolEmitPoint
+from qgis.gui import QgsMapToolEmitPoint, QgsMapToolPan, QgsRubberBand
+from .PointMapTool import PointMapTool
+from .PolyLineMapTool import PolylineMapTool
+from .PolygonMapTool import PolygonMapTool
 
 # import requests
-from PyQt5.QtWidgets import QAction, QMessageBox, QApplication, QToolButton, QMenu, QLineEdit, QPushButton, QComboBox, \
-    QToolBar
+from PyQt5.QtWidgets import QAction, QToolButton, QMenu, QLineEdit, QPushButton, QComboBox, QToolBar
 from PyQt5.QtMultimedia import *
 from PyQt5.QtMultimediaWidgets import *
 from PyQt5.QtCore import QUrl
-from PyQt5.QtGui import QDesktopServices
+from PyQt5.QtGui import QDesktopServices, QMouseEvent, QKeyEvent
 from qgis.core import (QgsCoordinateReferenceSystem,
                        QgsCoordinateTransform,
                        QgsProject,
@@ -73,9 +74,7 @@ from .EditerImage_dialog import EditerImageDialog
 
 import os.path
 from os import listdir
-import sys
 import time
-import pyautogui
 import math as Maths
 import json
 
@@ -107,49 +106,271 @@ class APNCad:
             self.translator.load(locale_path)
             QCoreApplication.installTranslator(self.translator)
 
-        # Declare instance attributes
-        self.actions = []
-        # self.menu = self.tr(u'&APNCad')
+        # Liste des couches pour construction / reconstruction projet (nom, type, groupe)
+        self.listLayers = [("debordT", "Point", "Symbole"), ("borne", "Point", "Symbole"),
+                           ("clotureMit", "Point", "Symbole"), ("murmitoyen", "Ligne", "Symbole"),
+                           ("murnonmi", "Ligne", "Symbole"), ("borne_retrouvee", "Point", "Symbole"),
+                           ("biffer", "Ligne", "Symbole"), ("MurDroite", "Ligne", "Dessin"),
+                           ("Point", "Point", "Dessin"), ("Texte", "Point", "Dessin"),
+                           ("TexteOriente", "Ligne", "Dessin"), ("MurMilieu", "Ligne", "Dessin"),
+                           ("coteSURLigne", "Ligne", "Dessin"), ("LigneDiscontinue", "Ligne", "Dessin"),
+                           ("LigneContinue", "Ligne", "Dessin"), ("cotesansligne", "Ligne", "Dessin"),
+                           ("polygone", "Polygone", "Dessin"), ("image", "Point", "Autre"),
+                           ("HaieNonMit", "Ligne", "Symbole"), ("Haiemit", "Ligne", "Symbole"),
+                           ("Fossenonmit", "Ligne", "Symbole"), ("FosseMit", "Ligne", "Symbole"),
+                           ("Cloturenonmit", "Ligne", "Symbole"), ("BornePolygo", "Point", "Symbole"),
+                           ("clou", "Point", "Symbole"), ("clouLimite", "Ligne", "Symbole"),
+                           ("Coterepere", "Ligne", "Dessin"), ("CroixGravee", "Point", "Symbole"),
+                           ("RepereNivel", "Ligne", "Symbole"), ("Das", "Point", "Autre"),
+                           ("puit", "Point", "Symbole"), ("PtDetail", "Point", "Symbole"),
+                           ("trottoir", "Ligne", "Dessin"), ("information", "Point", "Autre"),
+                           ("Numparc", "Point", "CroquisDelim"), ("GrandTexte", "Point", "CroquisDelim"),
+                           ("Fiscalite", "Ligne", "CroquisDelim"), ("LimiteCommune", "Ligne", "CroquisDelim"),
+                           ("LimiteSection", "Ligne", "CroquisDelim"), ("LimiteLieuDit", "Ligne", "CroquisDelim"),
+                           ("FiscaliteTexte", "Point", "CroquisDelim"), ("PetitText", "Point", "CroquisDelim")]
+
+        self.crsDict = {'RGF93 / CC43': 'EPSG:3943', 'RGF93 / CC44': 'EPSG:3944', 'RGF93 / CC45': 'EPSG:3945',
+                        'RGF93 / CC46': 'EPSG:3946', 'RGF93 / CC47': 'EPSG:3947', 'RGF93 / CC48': 'EPSG:3948',
+                        'RGF93 / CC49': 'EPSG:3949', 'RGF93 / CC50': 'EPSG:3950'}
+
+        # Check if plugin was started the first time in current QGIS session
+        # Must be set in initGui() to survive plugin reloads
+        self.first_start = None
+
+        # num et incrementation initiaux Points
+        self.numPoint = 0
+        self.increment = 1
+
+        # num et incrementation initiaux Num Parcelle
+        self.numParc = 1
+        self.incParc = 1
+
+        # Parametres polyligne
+        # attribut sur le segment
+        self.attribute = True
+
+        # liste contenant coord points pour cote courbe, translation
+        self.pointList = []
+
+        # Variable bool copy for translation
+        self.copy = True
+
+        # Liste contenant les plus proches objets
+        self.layerData = []
+
+        # Nombre de points pour la polyligne (infini=100)
+        self.nb_pts_poly = 100
+
+        # Camera path to save
+        self.save_path_image = ""
+        self.captured_image_path = ""
+
+        # Outils
+        self.canvas = self.iface.mapCanvas()
+
+        # Outils de dessin
+        # Tracer point
+        self.pointTool = PointMapTool(self.canvas)
+        self.pointTool.snapClicked.connect(self.display_point)
+
+        # Tracer num parc
+        self.numParcTool = PointMapTool(self.canvas)
+        self.numParcTool.snapClicked.connect(self.display_numParc)
+
+        # Pan (main)
+        self.toolPan = QgsMapToolPan(self.canvas)
+
+        # modif attribut
+        self.editAttributeTool = QgsMapToolEmitPoint(self.canvas)
+        self.editAttributeTool.canvasClicked.connect(self.edit_attribute)
+
+        # delete point
+        self.deleteTool = QgsMapToolEmitPoint(self.canvas)
+        self.deleteTool.canvasClicked.connect(self.delete_object)
+
+        # tracer debord
+        self.debordTool = PointMapTool(self.canvas)
+        self.debordTool.snapClicked.connect(self.display_debord)
+
+        # identifier couche
+        self.identifyTool = QgsMapToolEmitPoint(self.canvas)
+        self.identifyTool.canvasClicked.connect(self.identify_layer)
+
+        # freeze couche
+        self.freezeTool = QgsMapToolEmitPoint(self.canvas)
+        self.freezeTool.canvasClicked.connect(self.freeze_layer)
+
+        # copier et translater feature
+        self.copyTool = QgsMapToolEmitPoint(self.canvas)
+        self.copyTool.canvasClicked.connect(self.translate_copy_feature)
+
+        # declencher action
+        self.actionTool = QgsMapToolEmitPoint(self.canvas)
+        self.actionTool.canvasClicked.connect(self.trigger_action)
+
+        # tracer arc (3 pts)
+        self.arcTool = PointMapTool(self.canvas)
+        self.arcTool.snapClicked.connect(self.display_cote_courbe)
+
+        # tracer polyligne
+        self.polyligneTool = PolylineMapTool(self.canvas)
+        self.polyligneTool.polylineFinished.connect(self.apply_new_attribute)
+        # self.polyligneTool.snapClicked.connect(self.add_point)
+
+        # tracer polygon
+        self.polygonTool = PolygonMapTool(self.canvas)
+        self.polygonTool.polygonFinished.connect(self.apply_new_attribute)
+
+        # tracer entite ponctuelle (1 pt)
+        self.punctualTool = PointMapTool(self.canvas)
+        self.punctualTool.snapClicked.connect(self.display_punctual)
+
+        # variables utilisees dans le code
+        self.actions = {}
+
+    # noinspection PyMethodMayBeStatic
+    def tr(self, message):
+        """Get the translation for a string using Qt translation API.
+
+        :param message: String for translation.
+        :type message: str, QString
+
+        :returns: Translated version of message.
+        :rtype: QString
+        """
+        # noinspection PyTypeChecker,PyArgumentList,PyCallByClass
+        return QCoreApplication.translate('APNCad', message)
+
+    def add_action(
+            self,
+            icon_path,
+            text,
+            callback,
+            key_action,
+            toolbar=None,
+            toolbutton=None,
+            menu=None,
+            enabled_flag=False,
+            status_tip=None,
+            whats_this=None,
+            parent=None):
+        """Add a toolbar icon to the toolbar, menu or .
+
+        :param icon_path: Path to the icon for this action. Can be a resource
+            path (e.g. ':/plugins/foo/bar.png') or a normal file system path.
+        :type icon_path: str
+
+        :param text: Text that should be shown in menu items for this action.
+        :type text: str
+
+        :param callback: Function to be called when the action is triggered.
+        :type callback: () -> None
+
+        :param toolbar: Toolbar where the action will be added
+        :type toolbar: QToolBar
+
+        :param toolbutton: ToolButton where the action will be added
+        :type toolbutton: QToolButton
+
+        :param menu: Menu where the action will be added
+        :type menu: QMenu
+
+        :param enabled_flag: A flag indicating if the action should be enabled
+            by default. Defaults to True.
+        :type enabled_flag: bool
+
+        :param status_tip: Optional text to show in a popup when mouse pointer
+            hovers over the action.
+        :type status_tip: str
+
+        :param parent: Parent widget for the new action. Defaults None.
+        :type parent: QWidget
+
+        :param whats_this: Optional text to show in the status bar when the
+            mouse pointer hovers over the action.
+
+        :returns: The action that was created. Note that the action is also
+            added to self.actions list.
+        :rtype: QAction
+        """
+
+        icon = QIcon(icon_path)
+        action = QAction(icon, text, parent)
+        action.triggered.connect(callback)
+        action.setEnabled(enabled_flag)
+
+        if status_tip is not None:
+            action.setStatusTip(status_tip)
+
+        if whats_this is not None:
+            action.setWhatsThis(whats_this)
+
+        if toolbar is not None:
+            toolbar.addAction(action)
+
+        if toolbutton is not None:
+            toolbutton.menu().addAction(action)
+
+        if menu is not None:
+            self.iface.mainWindow().menuBar().insertMenu(self.iface.firstRightStandardMenu().menuAction(), menu)
+            menu.addAction(action)
+
+        self.actions[key_action] = action
+
+        return action
+
+    def initGui(self):
+        """Create the menu entries and toolbar icons inside the QGIS GUI."""
+
+        # Plugin Menu
         self.menu = QMenu(self.iface.mainWindow())
         self.menu.setObjectName("mAPNMenu")
         self.menu.setTitle("Préparation Delim")
         self.iface.mainWindow().menuBar().insertMenu(self.iface.firstRightStandardMenu().menuAction(), self.menu)
 
-        # Check if plugin was started the first time in current QGIS session
-        # Must be set in initGui() to survive plugin reloads
-        self.first_start = None
-        self.demarrage = True
+        # choix SCR et enregistrer sous
+        icon_path = ':/APNCad/icon/icon34.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Choisir un SCR'),
+            callback=self.set_crs,
+            menu=self.menu,
+            enabled_flag=True,
+            key_action="action_choice_scr",
+            parent=self.iface.mainWindow())
 
+        # action generer couche pour nouveau projet (menu uniquement)
+        icon_path = ':/APNCad/icon/icon33.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Générer les couches'),
+            callback=self.generate_layers,
+            menu=self.menu,
+            key_action="action_generate_layer",
+            parent=self.iface.mainWindow())
+
+        # action reconstruire projet (menu uniquement)
+        icon_path = ':/APNCad/icon/icon44.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Reconstruire le projet'),
+            callback=self.build_project,
+            menu=self.menu,
+            enabled_flag=True,
+            key_action="action_rebuild_project",
+            parent=self.iface.mainWindow())
+
+        ################################################################################################################
         # Toolbar general
-        self.toolbar = self.iface.addToolBar("APNCad Général")
-        self.toolbar.setObjectName("mGeneralToolBar")
-
-        # Toolbar point
-        self.pointToolbar = self.iface.addToolBar("APNCad Point")
-        self.pointToolbar.setObjectName("mPointToolBar")
-
-        # Toolbar autres outils
-        self.dessinToolbar = self.iface.addToolBar("APNCad Dessin")
-        self.dessinToolbar.setObjectName("mDessinToolBar")
-
-        # Toolbar symbole
-        self.symboleToolbar = self.iface.addToolBar("APNCad Symbole")
-        self.symboleToolbar.setObjectName("mSymboleToolBar")
-
-        # Toolbar CroquisDelim
-        self.croquisToolbar = self.iface.addToolBar("APNCad CroquisDelim")
-        self.croquisToolbar.setObjectName("mCroquisToolBar")
-
-        # Toolbar entree et zoom
-        self.enterToolbar = self.iface.addToolBar("APNCad Navigation")
-        self.enterToolbar.setObjectName("mNavigationToolBar")
+        self.generalToolbar = self.iface.addToolBar("APNCad Général")
+        self.generalToolbar.setObjectName("mGeneralToolBar")
 
         # Widget bouton start
         self.startButt = QPushButton(self.iface.mainWindow())
         self.startButt.setFixedWidth(80)
         self.startButt.setFixedHeight(20)
         self.startButt.setText("START")
-        self.rightClicWidget = self.toolbar.addWidget(self.startButt)
+        self.rightClicWidget = self.generalToolbar.addWidget(self.startButt)
         self.rightClicWidget.setToolTip(self.tr('Start'))
         self.startButt.clicked.connect(self.start_function)
 
@@ -157,19 +378,150 @@ class APNCad:
         self.coucheButton = QToolButton()
         self.coucheButton.setMenu(QMenu())
         self.coucheButton.setPopupMode(QToolButton.MenuButtonPopup)
-        self.coucheButtonAction = self.toolbar.addWidget(self.coucheButton)
+        self.generalToolbar.addWidget(self.coucheButton)
+
+        # Bouton afficher panneau couche
+        icon_path = ':/APNCad/icon/icon28.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Ouvrir/Fermer le panneau Couches'),
+            toolbutton=self.coucheButton,
+            callback=self.panneau_couche,
+            key_action="action_display_panel",
+            parent=self.iface.mainWindow())
+
+        self.coucheButton.setDefaultAction(self.actions["action_display_panel"])  # action par default du bouton
+
+        # Bouton identifier couche
+        icon_path = ':/APNCad/icon/icon29.png'
+        self.add_action(
+            icon_path,
+            text=self.tr("Identifier la couche d'un objet"),
+            toolbutton=self.coucheButton,
+            callback=self.set_identifyLayer_tool,
+            key_action="action_identify_layer",
+            parent=self.iface.mainWindow())
 
         # Bouton deroulant visu couche
         self.visuButton = QToolButton()
         self.visuButton.setMenu(QMenu())
         self.visuButton.setPopupMode(QToolButton.MenuButtonPopup)
-        self.visuButtonAction = self.toolbar.addWidget(self.visuButton)
+        self.generalToolbar.addWidget(self.visuButton)
+
+        # Bouton visu couche text CroqRem
+        icon_path = ':/APNCad/icon/icon50.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Afficher/cacher texte CroqRem'),
+            toolbutton=self.visuButton,
+            callback=self.visu_textCroqRem,
+            key_action="action_display_croqrem",
+            parent=self.iface.mainWindow())
+
+        self.visuButton.setDefaultAction(self.actions["action_display_croqrem"])  # action par default du bouton
+
+        # Bouton visu couche ortho
+        icon_path = ':/APNCad/icon/icon51.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Afficher/cacher Ortho'),
+            toolbutton=self.visuButton,
+            callback=self.visu_Ortho,
+            key_action="action_display_ortho",
+            parent=self.iface.mainWindow())
+
+        # Bouton geler couche
+        icon_path = ':/APNCad/icon/icon57.png'
+        self.add_action(
+            icon_path,
+            text=self.tr("Geler la couche d'un objet"),
+            toolbutton=self.visuButton,
+            callback=self.set_freezeLayer_tool,
+            key_action="action_freeze",
+            parent=self.iface.mainWindow())
 
         # Bouton deroulant translation
         self.translationButton = QToolButton()
         self.translationButton.setMenu(QMenu())
         self.translationButton.setPopupMode(QToolButton.MenuButtonPopup)
-        self.translationButtonAction = self.toolbar.addWidget(self.translationButton)
+        self.generalToolbar.addWidget(self.translationButton)
+
+        # Bouton translater feature
+        icon_path = ':/APNCad/icon/icon31.png'
+        self.add_action(
+            icon_path,
+            text=self.tr("Déplacer l'entité"),
+            toolbutton=self.translationButton,
+            callback=self.set_translation_tool,
+            key_action="action_move",
+            parent=self.iface.mainWindow())
+
+        self.translationButton.setDefaultAction(self.actions["action_move"])  # action par default du bouton
+
+        # Bouton copier translater feature
+        icon_path = ':/APNCad/icon/icon32.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Copier et déplacer les entités'),
+            toolbutton=self.translationButton,
+            callback=self.set_copy_tool,
+            key_action="action_copy",
+            parent=self.iface.mainWindow())
+
+        # Bouton delete object
+        icon_path = ':/APNCad/icon/icon9.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Supprimer des entités'),
+            callback=self.set_delete_tool,
+            toolbar=self.generalToolbar,
+            key_action="action_delete",
+            parent=self.iface.mainWindow())
+
+        # Bouton edit object attribute
+        icon_path = ':/APNCad/icon/icon10.png'
+        self.add_action(
+            icon_path,
+            text=self.tr("Editer l'attribut d'une entité"),
+            callback=self.set_edit_tool,
+            toolbar=self.generalToolbar,
+            key_action="action_edit",
+            parent=self.iface.mainWindow())
+
+        # bouton sauvegarder toutes les couches
+        icon_path = ':/APNCad/icon/icon3.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Sauvegarde les couches en mode édition'),
+            callback=self.save_layers,
+            toolbar=self.generalToolbar,
+            key_action="action_save",
+            parent=self.iface.mainWindow())
+
+        # bouton rechercher parcelle
+        icon_path = ':/APNCad/icon/icon43.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Rechercher une parcelle'),
+            callback=self.rechercher_parc,
+            toolbar=self.generalToolbar,
+            key_action="action_search_parcel",
+            parent=self.iface.mainWindow())
+
+        # bouton action
+        icon_path = ':/APNCad/icon/icon59.png'
+        self.add_action(
+            icon_path,
+            text=self.tr("Exécute l'action d'entité"),
+            callback=self.set_action_tool,
+            toolbar=self.generalToolbar,
+            key_action="action_run_action",
+            parent=self.iface.mainWindow())
+
+        ################################################################################################################
+        # Toolbar Point
+        self.pointToolbar = self.iface.addToolBar("APNCad Point")
+        self.pointToolbar.setObjectName("mPointToolBar")
 
         # Widget toolbar texte dernier point
         self.lastPoint = QLineEdit(self.iface.mainWindow())
@@ -182,55 +534,615 @@ class APNCad:
         self.pointButton = QToolButton()
         self.pointButton.setMenu(QMenu())
         self.pointButton.setPopupMode(QToolButton.MenuButtonPopup)
-        self.toolBtnAction = self.pointToolbar.addWidget(self.pointButton)
+        self.pointToolbar.addWidget(self.pointButton)
+
+        # Bouton tracer point
+        icon_path = ':/APNCad/icon/icon.png'  # nom tel que defini dans le fichier qrc
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Tracer Point'),
+            toolbutton=self.pointButton,
+            callback=self.set_point_tool,
+            key_action="action_draw_point",
+            parent=self.iface.mainWindow())
+
+        self.pointButton.setDefaultAction(self.actions["action_draw_point"])  # action par default du bouton
+
+        # Bouton configurer les points
+        icon_path = ':/APNCad/icon/icon2.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Configurer points'),
+            toolbutton=self.pointButton,
+            callback=self.config_point,
+            key_action="action_config_point",
+            parent=self.iface.mainWindow())
+
+        # bouton ouvrir table attribut couche Point
+        icon_path = ':/APNCad/icon/icon58.png'
+        self.add_action(
+            icon_path,
+            text=self.tr("Ouvrir la table d'attributs de Point"),
+            toolbutton=self.pointButton,
+            callback=self.open_attribute_table,
+            key_action="action_open_table_point",
+            parent=self.iface.mainWindow())
+
+        # bouton annuler dernier point
+        icon_path = ':/APNCad/icon/icon7.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Annuler'),
+            callback=self.cancel,
+            toolbar=self.pointToolbar,
+            key_action="action_cancel_point",
+            parent=self.iface.mainWindow())
+
+        ################################################################################################################
+        # Toolbar Dessin
+        self.dessinToolbar = self.iface.addToolBar("APNCad Dessin")
+        self.dessinToolbar.setObjectName("mDessinToolBar")
 
         # Bouton deroulant cote
         self.coteButton = QToolButton()
         self.coteButton.setMenu(QMenu())
         self.coteButton.setPopupMode(QToolButton.MenuButtonPopup)
-        self.coteButtonAction = self.dessinToolbar.addWidget(self.coteButton)
+        self.dessinToolbar.addWidget(self.coteButton)
+
+        # bouton coteSurLigne
+        icon_path = ':/APNCad/icon/icon12.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Cote sur ligne'),
+            toolbutton=self.coteButton,
+            callback=lambda: self.set_general_tool("coteSURLigne", self.coteButton, "action_cote_sur_ligne", True, 2),
+            key_action="action_cote_sur_ligne",
+            parent=self.iface.mainWindow())
+
+        self.coteButton.setDefaultAction(self.actions["action_cote_sur_ligne"])  # action par default du bouton
+
+        # bouton coteSansLigne
+        icon_path = ':/APNCad/icon/icon11.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Cote sans ligne'),
+            toolbutton=self.coteButton,
+            callback=lambda: self.set_general_tool("cotesansligne", self.coteButton, "action_cote_sans_ligne", True, 2),
+            key_action="action_cote_sans_ligne",
+            parent=self.iface.mainWindow())
+
+        # bouton cote courbe
+        icon_path = ':/APNCad/icon/icon13.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Cote courbe'),
+            toolbutton=self.coteButton,
+            callback=self.set_coteCourbe_tool,
+            key_action="action_cote_courbe",
+            parent=self.iface.mainWindow())
+
+        # bouton cote repere
+        icon_path = ':/APNCad/icon/icon47.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Cote repère'),
+            toolbutton=self.coteButton,
+            callback=lambda: self.set_general_tool("Coterepere", self.coteButton, "action_cote_repere", True, 3),
+            key_action="action_cote_repere",
+            parent=self.iface.mainWindow())
 
         # Bouton deroulant ligne
         self.ligneButton = QToolButton()
         self.ligneButton.setMenu(QMenu())
         self.ligneButton.setPopupMode(QToolButton.MenuButtonPopup)
-        self.ligneButtonAction = self.dessinToolbar.addWidget(self.ligneButton)
+        self.dessinToolbar.addWidget(self.ligneButton)
+
+        # bouton ligne continue
+        icon_path = ':/APNCad/icon/icon14.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Ligne continue'),
+            toolbutton=self.ligneButton,
+            callback=lambda: self.set_general_tool("LigneContinue",
+                                                   self.ligneButton, "action_ligne_continue", False, 100),
+            key_action="action_ligne_continue",
+            parent=self.iface.mainWindow())
+
+        self.ligneButton.setDefaultAction(self.actions["action_ligne_continue"])  # action par default du bouton
+
+        # bouton ligne discontinue
+        icon_path = ':/APNCad/icon/icon15.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Ligne discontinue'),
+            toolbutton=self.ligneButton,
+            callback=lambda: self.set_general_tool("LigneDiscontinue",
+                                                   self.ligneButton, "action_ligne_discontinue", False, 100),
+            key_action="action_ligne_discontinue",
+            parent=self.iface.mainWindow())
+
+        # bouton trottoir
+        icon_path = ':/APNCad/icon/icon55.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Trottoir'),
+            toolbutton=self.ligneButton,
+            callback=lambda: self.set_general_tool("trottoir", self.ligneButton, "action_trottoir", False, 100),
+            key_action="action_trottoir",
+            parent=self.iface.mainWindow())
 
         # Bouton deroulant mur dessin
         self.murButton = QToolButton()
         self.murButton.setMenu(QMenu())
         self.murButton.setPopupMode(QToolButton.MenuButtonPopup)
-        self.murButtonAction = self.dessinToolbar.addWidget(self.murButton)
+        self.dessinToolbar.addWidget(self.murButton)
+
+        # bouton Mur Droite
+        icon_path = ':/APNCad/icon/icon16.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Mur à droite'),
+            toolbutton=self.murButton,
+            callback=lambda: self.set_general_tool("MurDroite", self.murButton,  "action_mur_droite", True, 100),
+            key_action="action_mur_droite",
+            parent=self.iface.mainWindow())
+
+        self.murButton.setDefaultAction(self.actions["action_mur_droite"])  # action par default du bouton
+
+        # bouton Mur Milieu
+        icon_path = ':/APNCad/icon/icon17.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Mur au milieu'),
+            toolbutton=self.murButton,
+            callback=lambda: self.set_general_tool("MurMilieu", self.murButton, "action_mur_milieu", True, 100),
+            key_action="action_mur_milieu",
+            parent=self.iface.mainWindow())
 
         # Bouton deroulant texte
         self.texteButton = QToolButton()
         self.texteButton.setMenu(QMenu())
         self.texteButton.setPopupMode(QToolButton.MenuButtonPopup)
-        self.texteButtonAction = self.dessinToolbar.addWidget(self.texteButton)
+        self.dessinToolbar.addWidget(self.texteButton)
+
+        # bouton Texte
+        icon_path = ':/APNCad/icon/icon18.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Texte'),
+            toolbutton=self.texteButton,
+            callback=lambda: self.set_general_tool("Texte", self.texteButton, "action_texte", True),
+            key_action="action_texte",
+            parent=self.iface.mainWindow())
+
+        self.texteButton.setDefaultAction(self.actions["action_texte"])  # action par default du bouton
+
+        # bouton TexteOriente
+        icon_path = ':/APNCad/icon/icon19.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Texte orienté'),
+            toolbutton=self.texteButton,
+            callback=lambda: self.set_general_tool("TexteOriente", self.texteButton, "action_texte_oriente", True, 2),
+            key_action="action_texte_oriente",
+            parent=self.iface.mainWindow())
+
+        ################################################################################################################
+        # Toolbar Symbole
+        self.symboleToolbar = self.iface.addToolBar("APNCad Symbole")
+        self.symboleToolbar.setObjectName("mSymboleToolBar")
 
         # Bouton deroulant mur symbole
         self.murMitButton = QToolButton()
         self.murMitButton.setMenu(QMenu())
         self.murMitButton.setPopupMode(QToolButton.MenuButtonPopup)
-        self.murMitButtonAction = self.symboleToolbar.addWidget(self.murMitButton)
+        self.symboleToolbar.addWidget(self.murMitButton)
+
+        # bouton mur mitoyen
+        icon_path = ':/APNCad/icon/icon23.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Mur mitoyen'),
+            toolbutton=self.murMitButton,
+            callback=lambda: self.set_general_tool("murmitoyen", self.murMitButton, "action_mur_mitoyen", False, 2),
+            key_action="action_mur_mitoyen",
+            parent=self.iface.mainWindow())
+
+        self.murMitButton.setDefaultAction(self.actions["action_mur_mitoyen"])  # action par default du bouton
+
+        # bouton mur non mitoyen
+        icon_path = ':/APNCad/icon/icon24.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Mur NON mitoyen'),
+            toolbutton=self.murMitButton,
+            callback=lambda: self.set_general_tool("murnonmi", self.murMitButton, "action_mur_nonmitoyen", False, 2),
+            key_action="action_mur_nonmitoyen",
+            parent=self.iface.mainWindow())
+
+        # bouton cloture mit
+        icon_path = ':/APNCad/icon/icon25.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Clôture mitoyenne'),
+            toolbutton=self.murMitButton,
+            callback=lambda: self.set_general_tool("clotureMit", self.murMitButton, "action_cloture_mit"),
+            key_action="action_cloture_mit",
+            parent=self.iface.mainWindow())
+
+        # bouton cloture non mit
+        icon_path = ':/APNCad/icon/icon35.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Clôture NON mitoyenne'),
+            toolbutton=self.murMitButton,
+            callback=lambda: self.set_general_tool("Cloturenonmit",
+                                                   self.murMitButton, "action_cloture_nonmit", False, 2),
+            key_action="action_cloture_nonmit",
+            parent=self.iface.mainWindow())
+
+        # bouton haie mit
+        icon_path = ':/APNCad/icon/icon36.png'
+        self.add_action(
+            icon_path,
+            text=self.tr("Haie mitoyenne"),
+            toolbutton=self.murMitButton,
+            callback=lambda: self.set_general_tool("Haiemit", self.murMitButton, "action_haie_mit", False, 2),
+            key_action="action_haie_mit",
+            parent=self.iface.mainWindow())
+
+        # bouton haie non mit
+        icon_path = ':/APNCad/icon/icon37.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Haie NON mitoyenne'),
+            toolbutton=self.murMitButton,
+            callback=lambda: self.set_general_tool("HaieNonMit", self.murMitButton, "action_haie_nonmit", False, 2),
+            key_action="action_haie_nonmit",
+            parent=self.iface.mainWindow())
+
+        # bouton fosse mit
+        icon_path = ':/APNCad/icon/icon38.png'
+        self.add_action(
+            icon_path,
+            text=self.tr("Fossé mitoyen"),
+            toolbutton=self.murMitButton,
+            callback=lambda: self.set_general_tool("FosseMit", self.murMitButton, "action_fosse_mit", False, 2),
+            key_action="action_fosse_mit",
+            parent=self.iface.mainWindow())
+
+        # bouton fosse non mit
+        icon_path = ':/APNCad/icon/icon39.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Fossé NON mitoyen'),
+            toolbutton=self.murMitButton,
+            callback=lambda: self.set_general_tool("Fossenonmit", self.murMitButton, "action_fosse_nonmit", False, 2),
+            key_action="action_fosse_nonmit",
+            parent=self.iface.mainWindow())
 
         # Bouton deroulant borne
         self.borneButton = QToolButton()
         self.borneButton.setMenu(QMenu())
         self.borneButton.setPopupMode(QToolButton.MenuButtonPopup)
-        self.borneButtonAction = self.symboleToolbar.addWidget(self.borneButton)
+        self.symboleToolbar.addWidget(self.borneButton)
+
+        # bouton borne
+        icon_path = ':/APNCad/icon/icon21.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Borne'),
+            toolbutton=self.borneButton,
+            callback=lambda: self.set_general_tool("borne", self.borneButton, "action_borne"),
+            key_action="action_borne",
+            parent=self.iface.mainWindow())
+
+        self.borneButton.setDefaultAction(self.actions["action_borne"])  # action par default du bouton
+
+        # bouton borne retrouvee
+        icon_path = ':/APNCad/icon/icon22.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Borne retrouvée'),
+            toolbutton=self.borneButton,
+            callback=lambda: self.set_general_tool("borne_retrouvee", self.borneButton, "action_borne_retrouvee"),
+            key_action="action_borne_retrouvee",
+            parent=self.iface.mainWindow())
+
+        # bouton borne polygone
+        icon_path = ':/APNCad/icon/icon40.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Borne polygone'),
+            toolbutton=self.borneButton,
+            callback=lambda: self.set_general_tool("BornePolygo", self.borneButton, "action_borne_polygo", True),
+            key_action="action_borne_polygo",
+            parent=self.iface.mainWindow())
+
+        # clou
+        icon_path = ':/APNCad/icon/icon41.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Clou'),
+            toolbutton=self.borneButton,
+            callback=lambda: self.set_general_tool("clou", self.borneButton, "action_clou", True),
+            key_action="action_clou",
+            parent=self.iface.mainWindow())
+
+        # clou Limite
+        icon_path = ':/APNCad/icon/icon42.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Clou limite'),
+            toolbutton=self.borneButton,
+            callback=lambda: self.set_general_tool("clouLimite", self.borneButton, "action_clou_limite", False, 2),
+            key_action="action_clou_limite",
+            parent=self.iface.mainWindow())
+
+        # croix gravee
+        icon_path = ':/APNCad/icon/icon45.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Croix gravée'),
+            toolbutton=self.borneButton,
+            callback=lambda: self.set_general_tool("CroixGravee", self.borneButton, "action_croix_gravee"),
+            key_action="action_croix_gravee",
+            parent=self.iface.mainWindow())
+
+        # repere Nivellement
+        icon_path = ':/APNCad/icon/icon46.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Repère de Nivellement'),
+            toolbutton=self.borneButton,
+            callback=lambda: self.set_general_tool("RepereNivel", self.borneButton, "action_repere_nivel", True, 2),
+            key_action="action_repere_nivel",
+            parent=self.iface.mainWindow())
+
+        # bouton puit
+        icon_path = ':/APNCad/icon/icon53.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Puit'),
+            toolbutton=self.borneButton,
+            callback=lambda: self.set_general_tool("puit", self.borneButton, "action_puit"),
+            key_action="action_puit",
+            parent=self.iface.mainWindow())
+
+        # bouton ptDetail
+        icon_path = ':/APNCad/icon/icon54.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Point Détail'),
+            toolbutton=self.borneButton,
+            callback=lambda: self.set_general_tool("PtDetail", self.borneButton, "action_point_detail", True),
+            key_action="action_point_detail",
+            parent=self.iface.mainWindow())
 
         # Bouton deroulant piece jointe
         self.pjButton = QToolButton()
         self.pjButton.setMenu(QMenu())
         self.pjButton.setPopupMode(QToolButton.MenuButtonPopup)
-        self.pjButtonAction = self.symboleToolbar.addWidget(self.pjButton)
+        self.symboleToolbar.addWidget(self.pjButton)
+
+        # bouton image
+        icon_path = ':/APNCad/icon/icon27.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Image'),
+            toolbutton=self.pjButton,
+            callback=lambda: self.set_general_tool("image", self.pjButton, "action_image", True),
+            key_action="action_image",
+            parent=self.iface.mainWindow())
+
+        self.pjButton.setDefaultAction(self.actions["action_image"])  # action par default du bouton
+
+        # bouton Das
+        icon_path = ':/APNCad/icon/icon52.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Das'),
+            toolbutton=self.pjButton,
+            callback=self.set_das_tool,
+            key_action="action_das",
+            parent=self.iface.mainWindow())
+
+        # bouton info
+        icon_path = ':/APNCad/icon/icon56.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Information'),
+            toolbutton=self.pjButton,
+            callback=self.set_info_tool,
+            key_action="action_info",
+            parent=self.iface.mainWindow())
+
+        # bouton Debord de toit
+        icon_path = ':/APNCad/icon/icon20.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Débord de toit'),
+            callback=self.set_debord_tool,
+            toolbar=self.symboleToolbar,
+            key_action="action_debord_toit",
+            parent=self.iface.mainWindow())
+
+        # bouton biffer
+        icon_path = ':/APNCad/icon/icon26.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Biffer'),
+            callback=lambda: self.set_general_tool("biffer", attribute=False, nb_points_polyline=2),
+            toolbar=self.symboleToolbar,
+            key_action="action_biffer",
+            parent=self.iface.mainWindow())
+
+        # bouton polygone
+        icon_path = ':/APNCad/icon/icon30.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Polygone'),
+            callback=self.set_polygone_tool,
+            toolbar=self.symboleToolbar,
+            key_action="action_polygone",
+            parent=self.iface.mainWindow())
+
+        ################################################################################################################
+        # Toolbar CroquisDelim
+        self.croquisToolbar = self.iface.addToolBar("APNCad CroquisDelim")
+        self.croquisToolbar.setObjectName("mCroquisToolBar")
+
+        # Widget toolbar lineedit dernier num parcelle
+        self.lastNumParc = QLineEdit(self.iface.mainWindow())
+        self.lastNumParc.setFixedWidth(80)
+        self.lastNumParc.setReadOnly(True)
+        self.lastNumParcWidget = self.croquisToolbar.addWidget(self.lastNumParc)
+        self.lastNumParcWidget.setToolTip(self.tr('Numéro parcelle'))
+
+        # Bouton deroulant num parcelle
+        self.numParcButton = QToolButton()
+        self.numParcButton.setMenu(QMenu())
+        self.numParcButton.setPopupMode(QToolButton.MenuButtonPopup)
+        self.croquisToolbar.addWidget(self.numParcButton)
+
+        # tracer num parc
+        icon_path = ':/APNCad/icon/icon60.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Tracer numéro de parcelle'),
+            toolbutton=self.numParcButton,
+            callback=self.set_numParc_tool,
+            key_action="action_tracer_numparc",
+            parent=self.iface.mainWindow())
+
+        self.numParcButton.setDefaultAction(self.actions["action_tracer_numparc"])  # action par default du bouton
+
+        # configurer num parc
+        icon_path = ':/APNCad/icon/icon61.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Configurer numéros de parcelle'),
+            toolbutton=self.numParcButton,
+            callback=self.config_numParc,
+            key_action="action_config_numparc",
+            parent=self.iface.mainWindow())
+
+        # bouton ouvrir table attribut couche Numparc
+        icon_path = ':/APNCad/icon/icon62.png'
+        self.add_action(
+            icon_path,
+            text=self.tr("Ouvrir la table d'attributs de Numparc"),
+            toolbutton=self.numParcButton,
+            callback=self.open_numParc_attribute_table,
+            key_action="action_open_table_numparc",
+            parent=self.iface.mainWindow())
+
+        # bouton annuler dernier num parc
+        icon_path = ':/APNCad/icon/icon63.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Annuler numéro de parcelle'),
+            callback=self.cancel_numParc,
+            toolbar=self.croquisToolbar,
+            key_action="action_cancel_numparc",
+            parent=self.iface.mainWindow())
+
+        # Bouton deroulant fiscalite
+        self.fiscButton = QToolButton()
+        self.fiscButton.setMenu(QMenu())
+        self.fiscButton.setPopupMode(QToolButton.MenuButtonPopup)
+        self.croquisToolbar.addWidget(self.fiscButton)
+
+        # bouton fiscalite
+        icon_path = ':/APNCad/icon/icon67.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Limite de subdivision fiscale'),
+            toolbutton=self.fiscButton,
+            callback=lambda: self.set_general_tool("Fiscalite", self.fiscButton, "action_fiscalite", False, 100),
+            key_action="action_fiscalite",
+            parent=self.iface.mainWindow())
+
+        self.fiscButton.setDefaultAction(self.actions["action_fiscalite"])  # action par default du bouton
+
+        # bouton FiscaliteTexte
+        icon_path = ':/APNCad/icon/icon69.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Limite de subdivision fiscale'),
+            toolbutton=self.fiscButton,
+            callback=lambda: self.set_general_tool("FiscaliteTexte", self.fiscButton, "action_fiscalite_texte", True),
+            key_action="action_fiscalite_texte",
+            parent=self.iface.mainWindow())
+
+        # bouton LimiteCommune
+        icon_path = ':/APNCad/icon/icon64.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Limite de commune'),
+            callback=lambda: self.set_general_tool("LimiteCommune", attribute=False, nb_points_polyline=100),
+            toolbar=self.croquisToolbar,
+            key_action="action_limite_commune",
+            parent=self.iface.mainWindow())
+
+        # bouton LimiteSection
+        icon_path = ':/APNCad/icon/icon65.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Limite de section'),
+            callback=lambda: self.set_general_tool("LimiteSection", attribute=False, nb_points_polyline=100),
+            toolbar=self.croquisToolbar,
+            key_action="action_limite_section",
+            parent=self.iface.mainWindow())
+
+        # bouton LimiteLieudit
+        icon_path = ':/APNCad/icon/icon66.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Limite de lieu-dit'),
+            callback=lambda: self.set_general_tool("LimiteLieuDit", attribute=False, nb_points_polyline=100),
+            toolbar=self.croquisToolbar,
+            key_action="action_limite_lieudit",
+            parent=self.iface.mainWindow())
+
+        # Bouton deroulant petit-grand texte
+        self.dimTexteButton = QToolButton()
+        self.dimTexteButton.setMenu(QMenu())
+        self.dimTexteButton.setPopupMode(QToolButton.MenuButtonPopup)
+        self.croquisToolbar.addWidget(self.dimTexteButton)
+
+        # bouton GrandTexte
+        icon_path = ':/APNCad/icon/icon68.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Tracer un grand texte'),
+            toolbutton=self.dimTexteButton,
+            callback=lambda: self.set_general_tool("GrandTexte", self.dimTexteButton, "action_grand_texte", True),
+            key_action="action_grand_texte",
+            parent=self.iface.mainWindow())
+
+        self.dimTexteButton.setDefaultAction(self.actions["action_grand_texte"])
+
+        # bouton PetitTexte
+        icon_path = ':/APNCad/icon/icon70.png'
+        self.add_action(
+            icon_path,
+            text=self.tr(u'Tracer un petit texte'),
+            toolbutton=self.dimTexteButton,
+            callback=lambda: self.set_general_tool("PetitText", self.dimTexteButton, "action_petit_texte", True),
+            key_action="action_petit_texte",
+            parent=self.iface.mainWindow())
+
+        ################################################################################################################
+        # Toolbar entree et zoom
+        self.enterToolbar = self.iface.addToolBar("APNCad Navigation")
+        self.enterToolbar.setObjectName("mNavigationToolBar")
 
         # Widget toolbar clic droit (stop trace polyligne)
         self.rightClic = QPushButton(self.iface.mainWindow())
         self.rightClic.setFixedWidth(151)
         self.rightClic.setFixedHeight(51)
-        enterIcon = QIcon(':/plugins/APNCad/icon4.png')
+        enterIcon = QIcon(':/APNCad/icon/icon4.png')
         self.rightClic.setIcon(enterIcon)
         self.rightClic.setText("CLIC DROIT")
         self.rightClicWidget = self.enterToolbar.addWidget(self.rightClic)
@@ -250,7 +1162,7 @@ class APNCad:
         self.bouttonZoomPlus = QPushButton(self.iface.mainWindow())
         self.bouttonZoomPlus.setFixedWidth(60)
         self.bouttonZoomPlus.setFixedHeight(51)
-        zoomPlusIcon = QIcon(':/plugins/APNCad/icon5.png')
+        zoomPlusIcon = QIcon(':/APNCad/icon/icon5.png')
         self.bouttonZoomPlus.setIcon(zoomPlusIcon)
         self.zoomPlusWidget = self.enterToolbar.addWidget(self.bouttonZoomPlus)
         self.zoomPlusWidget.setToolTip(self.tr('Zoom +'))
@@ -260,7 +1172,7 @@ class APNCad:
         self.bouttonMain = QPushButton(self.iface.mainWindow())
         self.bouttonMain.setFixedWidth(60)
         self.bouttonMain.setFixedHeight(51)
-        mainIcon = QIcon(':/plugins/APNCad/icon8.png')
+        mainIcon = QIcon(':/APNCad/icon/icon8.png')
         self.bouttonMain.setIcon(mainIcon)
         self.mainWidget = self.enterToolbar.addWidget(self.bouttonMain)
         self.mainWidget.setToolTip(self.tr('Se déplacer dans la carte'))
@@ -270,7 +1182,7 @@ class APNCad:
         self.bouttonZoomMoins = QPushButton(self.iface.mainWindow())
         self.bouttonZoomMoins.setFixedWidth(60)
         self.bouttonZoomMoins.setFixedHeight(51)
-        zoomMoinsIcon = QIcon(':/plugins/APNCad/icon6.png')
+        zoomMoinsIcon = QIcon(':/APNCad/icon/icon6.png')
         self.bouttonZoomMoins.setIcon(zoomMoinsIcon)
         self.zoomMoinsWidget = self.enterToolbar.addWidget(self.bouttonZoomMoins)
         self.zoomMoinsWidget.setToolTip(self.tr('Zoom -'))
@@ -280,7 +1192,7 @@ class APNCad:
         self.bouttonTournerDroite = QPushButton(self.iface.mainWindow())
         self.bouttonTournerDroite.setFixedWidth(30)
         self.bouttonTournerDroite.setFixedHeight(51)
-        tournerDroiteIcon = QIcon(':/plugins/APNCad/icon48.png')
+        tournerDroiteIcon = QIcon(':/APNCad/icon/icon48.png')
         self.bouttonTournerDroite.setIcon(tournerDroiteIcon)
         self.tournerDroiteWidget = self.enterToolbar.addWidget(self.bouttonTournerDroite)
         self.tournerDroiteWidget.setToolTip(self.tr('Rotation droite'))
@@ -290,91 +1202,63 @@ class APNCad:
         self.bouttonTournerGauche = QPushButton(self.iface.mainWindow())
         self.bouttonTournerGauche.setFixedWidth(30)
         self.bouttonTournerGauche.setFixedHeight(51)
-        tournerGaucheIcon = QIcon(':/plugins/APNCad/icon49.png')
+        tournerGaucheIcon = QIcon(':/APNCad/icon/icon49.png')
         self.bouttonTournerGauche.setIcon(tournerGaucheIcon)
         self.tournerGaucheWidget = self.enterToolbar.addWidget(self.bouttonTournerGauche)
         self.tournerGaucheWidget.setToolTip(self.tr('Rotation gauche'))
         self.bouttonTournerGauche.clicked.connect(self.make_tourner(-10))
 
-        # Widget toolbar lineedit dernier num parcelle
-        self.lastNumParc = QLineEdit(self.iface.mainWindow())
-        self.lastNumParc.setFixedWidth(80)
-        self.lastNumParc.setReadOnly(True)
-        self.lastNumParcWidget = self.croquisToolbar.addWidget(self.lastNumParc)
-        self.lastNumParcWidget.setToolTip(self.tr('Numéro parcelle'))
-
-        # Bouton deroulant num parcelle
-        self.numParcButton = QToolButton()
-        self.numParcButton.setMenu(QMenu())
-        self.numParcButton.setPopupMode(QToolButton.MenuButtonPopup)
-        self.numParcButtonAction = self.croquisToolbar.addWidget(self.numParcButton)
-
-        # num et incrementation initiaux Points
-        self.numPoint = 0
-        self.increment = 1
-
-        # num et incrementation initiaux Num Parcelle
-        self.numParc = 0
-        self.incParc = 1
-
-        # Parametres polyligne
-        # attribut sur le segment
-        self.attribut = True
-
-        # liste contenant coord points pour polyligne, translation
-        self.pointList = []
-
-        # Variable bool copy for translation
-        self.copy = True
+        ################################################################################################################
+        # Dialog configuration
 
         # clavier num
         self.dlgClavierNum = ClavierNumDialog()
         self.dlgClavierNum.setFixedSize(377, 324)
-        self.dlgClavierNum.pushButton_0.clicked.connect(self.key_0)
-        self.dlgClavierNum.pushButton_1.clicked.connect(self.key_1)
-        self.dlgClavierNum.pushButton_2.clicked.connect(self.key_2)
-        self.dlgClavierNum.pushButton_3.clicked.connect(self.key_3)
-        self.dlgClavierNum.pushButton_4.clicked.connect(self.key_4)
-        self.dlgClavierNum.pushButton_5.clicked.connect(self.key_5)
-        self.dlgClavierNum.pushButton_6.clicked.connect(self.key_6)
-        self.dlgClavierNum.pushButton_7.clicked.connect(self.key_7)
-        self.dlgClavierNum.pushButton_8.clicked.connect(self.key_8)
-        self.dlgClavierNum.pushButton_9.clicked.connect(self.key_9)
-        self.dlgClavierNum.pushButton_coma.clicked.connect(self.key_coma)
+        self.dlgClavierNum.pushButton_0.clicked.connect(lambda: self.key_value("0"))
+        self.dlgClavierNum.pushButton_1.clicked.connect(lambda: self.key_value("1"))
+        self.dlgClavierNum.pushButton_2.clicked.connect(lambda: self.key_value("2"))
+        self.dlgClavierNum.pushButton_3.clicked.connect(lambda: self.key_value("3"))
+        self.dlgClavierNum.pushButton_4.clicked.connect(lambda: self.key_value("4"))
+        self.dlgClavierNum.pushButton_5.clicked.connect(lambda: self.key_value("5"))
+        self.dlgClavierNum.pushButton_6.clicked.connect(lambda: self.key_value("6"))
+        self.dlgClavierNum.pushButton_7.clicked.connect(lambda: self.key_value("7"))
+        self.dlgClavierNum.pushButton_8.clicked.connect(lambda: self.key_value("8"))
+        self.dlgClavierNum.pushButton_9.clicked.connect(lambda: self.key_value("9"))
+        self.dlgClavierNum.pushButton_coma.clicked.connect(lambda: self.key_value("."))
         self.dlgClavierNum.pushButton_del.clicked.connect(self.key_del)
 
         # parametre debordT
         self.debord = "0"
-        # fenetre debord
         self.dlgDebord = ChoisirDebordDialog()
         self.dlgDebord.setFixedSize(854, 155)
-        self.dlgDebord.pushButton_0.clicked.connect(self.set_debord0)
-        self.dlgDebord.pushButton_10.clicked.connect(self.set_debord10)
-        self.dlgDebord.pushButton_20.clicked.connect(self.set_debord20)
-        self.dlgDebord.pushButton_30.clicked.connect(self.set_debord30)
-        self.dlgDebord.pushButton_40.clicked.connect(self.set_debord40)
-        self.dlgDebord.pushButton_50.clicked.connect(self.set_debord50)
-        self.dlgDebord.pushButton_60.clicked.connect(self.set_debord60)
-        self.dlgDebord.pushButton_70.clicked.connect(self.set_debord70)
-        self.dlgDebord.pushButton_80.clicked.connect(self.set_debord80)
-        self.dlgDebord.pushButton_90.clicked.connect(self.set_debord90)
+        self.dlgDebord.pushButton_0.clicked.connect(lambda: self.set_debord("0"))
+        self.dlgDebord.pushButton_10.clicked.connect(lambda: self.set_debord("10"))
+        self.dlgDebord.pushButton_20.clicked.connect(lambda: self.set_debord("20"))
+        self.dlgDebord.pushButton_30.clicked.connect(lambda: self.set_debord("30"))
+        self.dlgDebord.pushButton_40.clicked.connect(lambda: self.set_debord("40"))
+        self.dlgDebord.pushButton_50.clicked.connect(lambda: self.set_debord("50"))
+        self.dlgDebord.pushButton_60.clicked.connect(lambda: self.set_debord("60"))
+        self.dlgDebord.pushButton_70.clicked.connect(lambda: self.set_debord("70"))
+        self.dlgDebord.pushButton_80.clicked.connect(lambda: self.set_debord("80"))
+        self.dlgDebord.pushButton_90.clicked.connect(lambda: self.set_debord("90"))
 
-        self.dlgDebord.pushButton_clavier.clicked.connect(self.make_clavier_num(self.dlgDebord.lineedit_debord))
+        self.dlgDebord.pushButton_clavier.clicked.connect(lambda: self.clavier_num(self.dlgDebord.lineedit_debord))
 
         # Fenetre entrer attribut (cote, modifier)
         self.dlgAttribut = EntrerAttributDialog()
         self.dlgAttribut.setFixedSize(430, 169)
-        self.dlgAttribut.pushButton_clavier.clicked.connect(self.make_clavier_num(self.dlgAttribut.lineedit_attribut))
+        self.dlgAttribut.pushButton_clavier.clicked.connect(
+            lambda: self.clavier_num(self.dlgAttribut.lineedit_attribut))
         self.dlgAttribut.pushButton_laser.clicked.connect(self.mesure_laser)
         # lecture des attributs dans fichier txt
-        file_txt = open(self.plugin_dir + '/attribut_texte.txt')
-        txt = file_txt.read()
-        list = txt.split('\n')
-        self.dlgAttribut.comboBox_texte.addItems(list)
+        with open(os.path.join(self.plugin_dir, "attribut_texte.txt")) as file_txt:
+            txt = file_txt.read()
+        list_attributes = txt.split('\n')
+        self.dlgAttribut.comboBox_texte.addItems(list_attributes)
         self.dlgAttribut.comboBox_texte.activated.connect(
-            self.fill_from_combo(self.dlgAttribut.comboBox_texte, self.dlgAttribut.lineedit_attribut))
+            lambda: self.fill_from_combo(self.dlgAttribut.comboBox_texte, self.dlgAttribut.lineedit_attribut))
         self.dlgAttribut.comboBox_field.currentIndexChanged.connect(
-            self.select_attribute_field(self.dlgAttribut.lineedit_attribut, self.dlgAttribut.comboBox_field))
+            lambda: self.select_attribute_field(self.dlgAttribut.lineedit_attribut, self.dlgAttribut.comboBox_field))
 
         # Fenetre editer info
         self.dlgInfo = EditerInfoDialog()
@@ -383,26 +1267,27 @@ class APNCad:
         # Fenetre editer image
         self.dlgImage = EditerImageDialog()
         self.dlgImage.setFixedSize(544, 136)
-        self.dlgImage.pushButton_browse.clicked.connect(self.make_browse_file(self.dlgImage.lineedit_attribut,
-                                                                    "Image files (*.jpg *.png);;PDF files (*.pdf)"))
+        self.dlgImage.pushButton_browse.clicked.connect(
+            lambda: self.browse_file(self.dlgImage.lineedit_attribut, "Image files (*.jpg *.png);;PDF files (*.pdf)"))
         self.dlgImage.pushButton_picture.clicked.connect(self.open_camera)
-        self.dlgImage.pushButton_clavier.clicked.connect(self.make_clavier_num(self.dlgImage.lineedit_attribut))
+        self.dlgImage.pushButton_clavier.clicked.connect(lambda: self.clavier_num(self.dlgImage.lineedit_attribut))
         self.dlgImage.comboBox_field.currentIndexChanged.connect(
-            self.select_attribute_field(self.dlgImage.lineedit_attribut, self.dlgImage.comboBox_field))
+            lambda: self.select_attribute_field(self.dlgImage.lineedit_attribut, self.dlgImage.comboBox_field))
 
         # Fenetre parametres point
         self.dlgConfigPt = ConfigPointsDialog()
         self.dlgConfigPt.setFixedSize(477, 141)  # empeche redimensionnement fenetre
-        self.dlgConfigPt.pushButton_clavierNum.clicked.connect(self.make_clavier_num(self.dlgConfigPt.lineedit_numin))
-        self.dlgConfigPt.pushButton_clavierInc.clicked.connect(self.make_clavier_num(self.dlgConfigPt.lineedit_inc))
-        self.dlgConfigPt.button_resumeNum.clicked.connect(self.make_resume_num("point"))
+        self.dlgConfigPt.pushButton_clavierNum.clicked.connect(
+            lambda: self.clavier_num(self.dlgConfigPt.lineedit_numin))
+        self.dlgConfigPt.pushButton_clavierInc.clicked.connect(lambda: self.clavier_num(self.dlgConfigPt.lineedit_inc))
+        self.dlgConfigPt.button_resumeNum.clicked.connect(lambda: self.resume_num("point"))
 
         # Fenetre parametres num parc
         self.dlgNumParc = ConfigPointsDialog()
         self.dlgNumParc.setFixedSize(477, 141)  # empeche redimensionnement fenetre
-        self.dlgNumParc.pushButton_clavierNum.clicked.connect(self.make_clavier_num(self.dlgNumParc.lineedit_numin))
-        self.dlgNumParc.pushButton_clavierInc.clicked.connect(self.make_clavier_num(self.dlgNumParc.lineedit_inc))
-        self.dlgNumParc.button_resumeNum.clicked.connect(self.make_resume_num("parcelle"))
+        self.dlgNumParc.pushButton_clavierNum.clicked.connect(lambda: self.clavier_num(self.dlgNumParc.lineedit_numin))
+        self.dlgNumParc.pushButton_clavierInc.clicked.connect(lambda: self.clavier_num(self.dlgNumParc.lineedit_inc))
+        self.dlgNumParc.button_resumeNum.clicked.connect(lambda: self.resume_num("parcelle"))
 
         # Fenetre liste points
         self.dlgListe = ListePointDialog()
@@ -415,12 +1300,8 @@ class APNCad:
         # Fenetre choix SCR
         self.dlgCrs = CrsDialog()
         self.dlgCrs.setFixedSize(453, 190)
-        self.crsDict = {'RGF93 / CC43': 'EPSG:3943', 'RGF93 / CC44': 'EPSG:3944', 'RGF93 / CC45': 'EPSG:3945',
-                        'RGF93 / CC46': 'EPSG:3946', 'RGF93 / CC47': 'EPSG:3947', 'RGF93 / CC48': 'EPSG:3948',
-                        'RGF93 / CC49': 'EPSG:3949', 'RGF93 / CC50': 'EPSG:3950'}
         for key in self.crsDict.keys():
             self.dlgCrs.comboBox_crs.addItems([key])
-
         self.dlgCrs.lineEdit_path.setReadOnly(True)
         self.dlgCrs.pushButton_saveAs.clicked.connect(self.save_project)
 
@@ -450,37 +1331,12 @@ class APNCad:
         self.camera_toolbar.addWidget(self.button_close_cam)
 
         self.button_photo.clicked.connect(self.take_picture)
-        self.button_photo_browse.clicked.connect(self.make_browse_folder(self.lineedit_photo_path))
+        self.button_photo_browse.clicked.connect(lambda: self.browse_folder(self.lineedit_photo_path))
         self.camera_selector.currentIndexChanged.connect(self.select_camera)
         self.button_close_cam.clicked.connect(self.close_camera)
-        # path to save
-        self.save_path_image = ""
-        self.captured_image_path = ""
 
-        # Put the window on the foreground
+        # Put the CRS window on the foreground when project saved
         self.iface.actionSaveProjectAs().triggered.connect(self.set_crs_on_top)
-
-        # Liste des couches, de leur type et leur groupe
-        self.listLayers = [("debordT", "Point", "Symbole"), ("borne", "Point", "Symbole"),
-                           ("clotureMit", "Point", "Symbole"), ("murmitoyen", "Ligne", "Symbole"),
-                           ("murnonmi", "Ligne", "Symbole"), ("borne_retrouvee", "Point", "Symbole"),
-                           ("biffer", "Ligne", "Symbole"), ("MurDroite", "Ligne", "Dessin"),
-                           ("Point", "Point", "Dessin"), ("Texte", "Point", "Dessin"),
-                           ("TexteOriente", "Ligne", "Dessin"), ("MurMilieu", "Ligne", "Dessin"),
-                           ("coteSURLigne", "Ligne", "Dessin"), ("LigneDiscontinue", "Ligne", "Dessin"),
-                           ("LigneContinue", "Ligne", "Dessin"), ("cotesansligne", "Ligne", "Dessin"),
-                           ("polygone", "Polygone", "Dessin"), ("image", "Point", "Autre"),
-                           ("HaieNonMit", "Ligne", "Symbole"), ("Haiemit", "Ligne", "Symbole"),
-                           ("Fossenonmit", "Ligne", "Symbole"), ("FosseMit", "Ligne", "Symbole"),
-                           ("Cloturenonmit", "Ligne", "Symbole"), ("BornePolygo", "Point", "Symbole"),
-                           ("clou", "Point", "Symbole"), ("clouLimite", "Ligne", "Symbole"),
-                           ("Coterepere", "Ligne", "Dessin"), ("CroixGravee", "Point", "Symbole"),
-                           ("RepereNivel", "Ligne", "Symbole"), ("Das", "Point", "Autre"),
-                           ("puit", "Point", "Symbole"), ("PtDetail", "Point", "Symbole"),
-                           ("trottoir", "Ligne", "Dessin"), ("information", "Point", "Autre"),
-                           ("Numparc", "Point", "CroquisDelim"), ("GrandTexte", "Point", "CroquisDelim"),
-                           ("Fiscalite", "Ligne", "CroquisDelim"), ("LimiteCommune", "Ligne", "CroquisDelim"),
-                           ("LimiteSection", "Ligne", "CroquisDelim"), ("LimiteLieuDit", "Ligne", "CroquisDelim")]
 
         # Fenetre mesure laser metre
         self.dlgLaser = LasermDialog()
@@ -491,922 +1347,15 @@ class APNCad:
         # Fenetre recherche parcelle
         self.dlgParc = RechercheParcDialog()
         self.dlgParc.setFixedSize(463, 179)
-        self.dlgParc.pushButton_clavierNum.clicked.connect(self.make_clavier_num(self.dlgParc.LineEdit_parc))
+        self.dlgParc.pushButton_clavierNum.clicked.connect(lambda: self.clavier_num(self.dlgParc.LineEdit_parc))
 
         # Fenetre suppression
         self.dlgNear = SelectFeatDialog()
         self.dlgNear.setFixedSize(546, 409)
         self.dlgNear.pushButton_select.clicked.connect(self.select_feat)
 
-        # Liste contenant les plus proches objets
-        self.layerData = []
-
-        # Nombre de points pour la polyligne (infini=100)
-        self.nb_pts_poly = 100
-
-        # Outils
-        self.canvas = self.iface.mapCanvas()
-
-        # Tracer point
-        self.clickTool = SnappingMapToolEmitPoint(self.canvas)
-        self.clickTool.snapClicked.connect(self.display_point)
-
-        # Tracer num parc
-        self.numParcTool = SnappingMapToolEmitPoint(self.canvas)
-        self.numParcTool.snapClicked.connect(self.display_numParc)
-
-        # Pan (main)
-        self.toolPan = QgsMapToolPan(self.canvas)
-
-        # modif attribut
-        self.modifTool = QgsMapToolEmitPoint(self.canvas)
-        self.modifTool.canvasClicked.connect(self.modify_attribute)
-
-        # delete point
-        self.deleteTool = QgsMapToolEmitPoint(self.canvas)
-        self.deleteTool.canvasClicked.connect(self.delete_object)
-
-        # tracer segment (2 pts)
-        # self.segmentTool = SnappingMapToolEmitPoint(self.canvas)
-        # self.segmentTool.snapClicked.connect(self.display_segment)
-
-        # tracer arc (3 pts)
-        self.arcTool = SnappingMapToolEmitPoint(self.canvas)
-        self.arcTool.snapClicked.connect(self.display_cote_courbe)
-
-        # tracer polyligne
-        self.polyligneTool = SnappingMapToolEmitPoint(self.canvas)
-        self.polyligneTool.snapClicked.connect(self.add_point)
-
-        # tracer entite ponctuelle (1 pt)
-        self.punctualTool = SnappingMapToolEmitPoint(self.canvas)
-        self.punctualTool.snapClicked.connect(self.display_punctual)
-
-        # tracer debord
-        self.debordTool = SnappingMapToolEmitPoint(self.canvas)
-        self.debordTool.snapClicked.connect(self.display_debord)
-
-        # identifier couche
-        self.identifyTool = QgsMapToolEmitPoint(self.canvas)
-        self.identifyTool.canvasClicked.connect(self.identify_layer)
-
-        # freeze couche
-        self.freezeTool = QgsMapToolEmitPoint(self.canvas)
-        self.freezeTool.canvasClicked.connect(self.freeze_layer)
-
-        # copier et translater feature
-        self.copyTool = QgsMapToolEmitPoint(self.canvas)
-        self.copyTool.canvasClicked.connect(self.translate_copy_feature)
-
-        # declencher action
-        self.actionTool = QgsMapToolEmitPoint(self.canvas)
-        self.actionTool.canvasClicked.connect(self.trigger_action)
-
-    # noinspection PyMethodMayBeStatic
-    def tr(self, message):
-        """Get the translation for a string using Qt translation API.
-
-        We implement this ourselves since we do not inherit QObject.
-
-        :param message: String for translation.
-        :type message: str, QString
-
-        :returns: Translated version of message.
-        :rtype: QString
-        """
-        # noinspection PyTypeChecker,PyArgumentList,PyCallByClass
-        return QCoreApplication.translate('APNCad', message)
-
-    def add_action(
-            self,
-            icon_path,
-            text,
-            callback,
-            toolbar=None,
-            menu=None,
-            enabled_flag=False,
-            add_to_menu=False,
-            add_to_toolbar=False,
-            status_tip=None,
-            whats_this=None,
-            parent=None):
-        """Add a toolbar icon to the toolbar.
-
-        :param icon_path: Path to the icon for this action. Can be a resource
-            path (e.g. ':/plugins/foo/bar.png') or a normal file system path.
-        :type icon_path: str
-
-        :param text: Text that should be shown in menu items for this action.
-        :type text: str
-
-        :param callback: Function to be called when the action is triggered.
-        :type callback: function
-
-        :param enabled_flag: A flag indicating if the action should be enabled
-            by default. Defaults to True.
-        :type enabled_flag: bool
-
-        :param add_to_menu: Flag indicating whether the action should also
-            be added to the menu. Defaults to True.
-        :type add_to_menu: bool
-
-        :param add_to_toolbar: Flag indicating whether the action should also
-            be added to the toolbar. Defaults to True.
-        :type add_to_toolbar: bool
-
-        :param status_tip: Optional text to show in a popup when mouse pointer
-            hovers over the action.
-        :type status_tip: str
-
-        :param parent: Parent widget for the new action. Defaults None.
-        :type parent: QWidget
-
-        :param whats_this: Optional text to show in the status bar when the
-            mouse pointer hovers over the action.
-
-        :returns: The action that was created. Note that the action is also
-            added to self.actions list.
-        :rtype: QAction
-        """
-
-        icon = QIcon(icon_path)
-        action = QAction(icon, text, parent)
-        action.triggered.connect(callback)
-        action.setEnabled(enabled_flag)
-
-        if status_tip is not None:
-            action.setStatusTip(status_tip)
-
-        if whats_this is not None:
-            action.setWhatsThis(whats_this)
-
-        if add_to_toolbar:
-            # Adds plugin icon to Plugins toolbar
-            toolbar.addAction(action)
-
-        if add_to_menu:
-            # self.iface.addPluginToMenu(
-            #     menu,
-            #     action)
-            self.iface.mainWindow().menuBar().insertMenu(self.iface.firstRightStandardMenu().menuAction(), menu)
-            menu.addAction(action)
-
-        self.actions.append(action)
-
-        return action
-
-    def initGui(self):
-        """Create the menu entries and toolbar icons inside the QGIS GUI."""
-
-        # tracer point
-        icon_path = ':/plugins/APNCad/icon.png'  # nom tel que defini dans le fichier qrc
-        self.add_action(
-            icon_path,
-            text=self.tr(u'Tracer Point'),
-            callback=self.set_point_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_tracer_point = len(self.actions) - 1
-
-        # configurer les points
-        icon_path = ':/plugins/APNCad/icon2.png'
-        self.add_action(
-            icon_path,
-            text=self.tr(u'Configurer points'),
-            callback=self.config_point,
-            parent=self.iface.mainWindow())
-
-        self.id_config_point = len(self.actions) - 1
-
-        # Bouton delete object
-        icon_path = ':/plugins/APNCad/icon9.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Supprimer des entités'),
-            callback=self.set_delete_tool,
-            toolbar=self.toolbar,
-            add_to_toolbar=True,
-            parent=self.iface.mainWindow())
-
-        # Bouton modif object attribute
-        icon_path = ':/plugins/APNCad/icon10.png'
-        self.add_action(
-            icon_path,
-            text=self.tr("Modifier l'attribut d'une entité"),
-            callback=self.set_modif_tool,
-            toolbar=self.toolbar,
-            add_to_toolbar=True,
-            parent=self.iface.mainWindow())
-
-        # bouton sauvegarder toutes les couches
-        icon_path = ':/plugins/APNCad/icon3.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Sauvegarde les couches en mode édition'),
-            callback=self.save_layers,
-            toolbar=self.toolbar,
-            add_to_toolbar=True,
-            parent=self.iface.mainWindow())
-
-        # bouton annuler dernier point
-        icon_path = ':/plugins/APNCad/icon7.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Annuler'),
-            callback=self.cancel,
-            toolbar=self.pointToolbar,
-            add_to_toolbar=True,
-            parent=self.iface.mainWindow())
-
-        self.id_cancel = len(self.actions) - 1
-
-        # bouton coteSurLigne
-        icon_path = ':/plugins/APNCad/icon12.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Cote sur ligne'),
-            callback=self.set_coteSurLigne_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_coteSurLigne = len(self.actions) - 1
-
-        # bouton coteSansLigne
-        icon_path = ':/plugins/APNCad/icon11.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Cote sans ligne'),
-            callback=self.set_coteSansLigne_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_coteSansLigne = len(self.actions) - 1
-
-        # bouton cote courbe
-        icon_path = ':/plugins/APNCad/icon13.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Cote courbe'),
-            callback=self.set_coteCourbe_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_coteCourbe = len(self.actions) - 1
-
-        # bouton ligne continue
-        icon_path = ':/plugins/APNCad/icon14.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Ligne continue'),
-            callback=self.set_ligneContinue_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_ligneContinue = len(self.actions) - 1
-
-        # bouton ligne discontinue
-        icon_path = ':/plugins/APNCad/icon15.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Ligne discontinue'),
-            callback=self.set_ligneDiscontinue_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_ligneDiscontinue = len(self.actions) - 1
-
-        # bouton Mur Droite
-        icon_path = ':/plugins/APNCad/icon16.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Mur à droite'),
-            callback=self.set_murDroite_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_murDroite = len(self.actions) - 1
-
-        # bouton Mur Milieu
-        icon_path = ':/plugins/APNCad/icon17.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Mur au milieu'),
-            callback=self.set_murMilieu_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_murMilieu = len(self.actions) - 1
-
-        # bouton Texte
-        icon_path = ':/plugins/APNCad/icon18.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Texte'),
-            callback=self.set_Texte_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_texte = len(self.actions) - 1
-
-        # bouton TexteOriente
-        icon_path = ':/plugins/APNCad/icon19.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Texte orienté'),
-            callback=self.set_texteOriente_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_texteOriente = len(self.actions) - 1
-
-        # bouton Debord de toit
-        icon_path = ':/plugins/APNCad/icon20.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Débord de toit'),
-            callback=self.set_debord_tool,
-            toolbar=self.symboleToolbar,
-            add_to_toolbar=True,
-            parent=self.iface.mainWindow())
-
-        self.id_debord = len(self.actions) - 1
-
-        # bouton borne
-        icon_path = ':/plugins/APNCad/icon21.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Borne'),
-            callback=self.set_borne_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_borne = len(self.actions) - 1
-
-        # bouton borne retrouvee
-        icon_path = ':/plugins/APNCad/icon22.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Borne retrouvée'),
-            callback=self.set_borneRetrouvee_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_borneRetrouvee = len(self.actions) - 1
-
-        # bouton mur mitoyen
-        icon_path = ':/plugins/APNCad/icon23.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Mur mitoyen'),
-            callback=self.set_murMitoyen_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_murMitoyen = len(self.actions) - 1
-
-        # bouton mur non mitoyen
-        icon_path = ':/plugins/APNCad/icon24.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Mur NON mitoyen'),
-            callback=self.set_murNonMitoyen_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_murNonMitoyen = len(self.actions) - 1
-
-        # cloture mit
-        icon_path = ':/plugins/APNCad/icon25.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Clôture mitoyenne'),
-            callback=self.set_clotureMitoyen_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_clotureMit = len(self.actions) - 1
-
-        # bouton biffer
-        icon_path = ':/plugins/APNCad/icon26.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Biffer'),
-            callback=self.set_biffer_tool,
-            toolbar=self.symboleToolbar,
-            add_to_toolbar=True,
-            parent=self.iface.mainWindow())
-
-        self.id_biffer = len(self.actions) - 1
-
-        # bouton image
-        icon_path = ':/plugins/APNCad/icon27.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Image'),
-            callback=self.set_image_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_image = len(self.actions) - 1
-
-        # bouton afficher panneau couche
-        icon_path = ':/plugins/APNCad/icon28.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Ouvrir/Fermer le panneau Couches'),
-            callback=self.panneau_couche,
-            parent=self.iface.mainWindow())
-
-        self.id_panneauCouche = len(self.actions) - 1
-
-        # bouton identifier couche
-        icon_path = ':/plugins/APNCad/icon29.png'
-        self.add_action(
-            icon_path,
-            text=self.tr("Identifier la couche d'un objet"),
-            callback=self.set_identifyLayer_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_identifyLayer = len(self.actions) - 1
-
-        # bouton polygone
-        icon_path = ':/plugins/APNCad/icon30.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Polygone'),
-            callback=self.set_polygone_tool,
-            toolbar=self.symboleToolbar,
-            add_to_toolbar=True,
-            parent=self.iface.mainWindow())
-
-        self.id_polygone = len(self.actions) - 1
-
-        # translater feature
-        icon_path = ':/plugins/APNCad/icon31.png'
-        self.add_action(
-            icon_path,
-            text=self.tr("Déplacer l'entité"),
-            callback=self.set_translation_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_translater_feat = len(self.actions) - 1
-
-        # copier translater feature
-        icon_path = ':/plugins/APNCad/icon32.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Copier et déplacer les entités'),
-            callback=self.set_copy_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_copier_feat = len(self.actions) - 1
-
-        # choix SCR et enregistrer sous
-        icon_path = ':/plugins/APNCad/icon34.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Choisir un SCR'),
-            callback=self.set_crs,
-            menu=self.menu,
-            enabled_flag=True,
-            add_to_menu=True,
-            parent=self.iface.mainWindow())
-
-        self.id_set_crs = len(self.actions) - 1
-
-        # action generer couche pour nouveau projet (menu uniquement)
-        icon_path = ':/plugins/APNCad/icon33.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Générer les couches'),
-            callback=self.generate_layers,
-            menu=self.menu,
-            add_to_menu=True,
-            parent=self.iface.mainWindow())
-
-        self.id_generate_layer = len(self.actions) - 1
-
-        # cloture non mit
-        icon_path = ':/plugins/APNCad/icon35.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Clôture NON mitoyenne'),
-            callback=self.set_clotureNonMitoyen_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_clotureNonMit = len(self.actions) - 1
-
-        # haie mit
-        icon_path = ':/plugins/APNCad/icon36.png'
-        self.add_action(
-            icon_path,
-            text=self.tr("Haie mitoyenne"),
-            callback=self.set_haieMitoyen_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_haieMit = len(self.actions) - 1
-
-        # haie non mit
-        icon_path = ':/plugins/APNCad/icon37.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Haie NON mitoyenne'),
-            callback=self.set_haieNonMitoyen_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_haieNonMit = len(self.actions) - 1
-
-        # fosse mit
-        icon_path = ':/plugins/APNCad/icon38.png'
-        self.add_action(
-            icon_path,
-            text=self.tr("Fossé mitoyen"),
-            callback=self.set_fosseMitoyen_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_fosseMit = len(self.actions) - 1
-
-        # fosse non mit
-        icon_path = ':/plugins/APNCad/icon39.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Fossé NON mitoyen'),
-            callback=self.set_fosseNonMitoyen_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_fosseNonMit = len(self.actions) - 1
-
-        # bouton borne polygone
-        icon_path = ':/plugins/APNCad/icon40.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Borne polygone'),
-            callback=self.set_bornePolygo_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_bornePolygo = len(self.actions) - 1
-
-        # clou
-        icon_path = ':/plugins/APNCad/icon41.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Clou'),
-            callback=self.set_clou_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_clou = len(self.actions) - 1
-
-        # clou Limite
-        icon_path = ':/plugins/APNCad/icon42.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Clou limite'),
-            callback=self.set_clouLimite_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_clouLimite = len(self.actions) - 1
-
-        # bouton rechercher parcelle
-        icon_path = ':/plugins/APNCad/icon43.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Rechercher une parcelle'),
-            callback=self.rechercher_parc,
-            toolbar=self.toolbar,
-            add_to_toolbar=True,
-            parent=self.iface.mainWindow())
-
-        self.id_rechercherParc = len(self.actions) - 1
-
-        # action reconstruire projet (menu uniquement)
-        icon_path = ':/plugins/APNCad/icon44.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Reconstruire le projet'),
-            callback=self.build_project,
-            menu=self.menu,
-            enabled_flag=True,
-            add_to_menu=True,
-            parent=self.iface.mainWindow())
-
-        self.id_build_project = len(self.actions) - 1
-
-        # croix gravee
-        icon_path = ':/plugins/APNCad/icon45.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Croix gravée'),
-            callback=self.set_croixGravee_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_croixGravee = len(self.actions) - 1
-
-        # repere Nivellement
-        icon_path = ':/plugins/APNCad/icon46.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Repère de Nivellement'),
-            callback=self.set_repereNivel_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_repereNivel = len(self.actions) - 1
-
-        # bouton cote repere
-        icon_path = ':/plugins/APNCad/icon47.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Cote repère'),
-            callback=self.set_coteRepere_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_coteRepere = len(self.actions) - 1
-
-        # bouton visu couche text CroqRem
-        icon_path = ':/plugins/APNCad/icon50.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Afficher/cacher texte CroqRem'),
-            callback=self.visu_textCroqRem,
-            parent=self.iface.mainWindow())
-
-        self.id_visuCroqRem = len(self.actions) - 1
-
-        # bouton visu couche ortho
-        icon_path = ':/plugins/APNCad/icon51.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Afficher/cacher Ortho'),
-            callback=self.visu_Ortho,
-            parent=self.iface.mainWindow())
-
-        self.id_visuOrtho = len(self.actions) - 1
-
-        # bouton Das
-        icon_path = ':/plugins/APNCad/icon52.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Das'),
-            callback=self.set_das_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_das = len(self.actions) - 1
-
-        # bouton puit
-        icon_path = ':/plugins/APNCad/icon53.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Puit'),
-            callback=self.set_puit_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_puit = len(self.actions) - 1
-
-        # bouton ptDetail
-        icon_path = ':/plugins/APNCad/icon54.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Point Détail'),
-            callback=self.set_ptDetail_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_ptDetail = len(self.actions) - 1
-
-        # bouton trottoir
-        icon_path = ':/plugins/APNCad/icon55.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Trottoir'),
-            callback=self.set_trottoir_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_trottoir = len(self.actions) - 1
-
-        # bouton info
-        icon_path = ':/plugins/APNCad/icon56.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Information'),
-            callback=self.set_info_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_info = len(self.actions) - 1
-
-        # bouton geler couche
-        icon_path = ':/plugins/APNCad/icon57.png'
-        self.add_action(
-            icon_path,
-            text=self.tr("Geler la couche d'un objet"),
-            callback=self.set_freezeLayer_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_freezeLayer = len(self.actions) - 1
-
-        # bouton ouvrir table attribut couche Point
-        icon_path = ':/plugins/APNCad/icon58.png'
-        self.add_action(
-            icon_path,
-            text=self.tr("Ouvrir la table d'attributs de Point"),
-            callback=self.open_attribute_table,
-            parent=self.iface.mainWindow())
-
-        self.id_openAttributeTab = len(self.actions) - 1
-
-        # bouton action
-        icon_path = ':/plugins/APNCad/icon59.png'
-        self.add_action(
-            icon_path,
-            text=self.tr("Exécute l'action d'entité"),
-            callback=self.set_action_tool,
-            toolbar=self.toolbar,
-            add_to_toolbar=True,
-            parent=self.iface.mainWindow())
-
-        self.id_triggerAction = len(self.actions) - 1
-
-        # tracer num parc
-        icon_path = ':/plugins/APNCad/icon60.png'
-        self.add_action(
-            icon_path,
-            text=self.tr(u'Tracer numéro de parcelle'),
-            callback=self.set_numParc_tool,
-            parent=self.iface.mainWindow())
-
-        self.id_tracer_numParc = len(self.actions) - 1
-
-        # configurer num parc
-        icon_path = ':/plugins/APNCad/icon61.png'
-        self.add_action(
-            icon_path,
-            text=self.tr(u'Configurer numéros de parcelle'),
-            callback=self.config_numParc,
-            parent=self.iface.mainWindow())
-
-        self.id_config_numParc = len(self.actions) - 1
-
-        # bouton ouvrir table attribut couche Numparc
-        icon_path = ':/plugins/APNCad/icon62.png'
-        self.add_action(
-            icon_path,
-            text=self.tr("Ouvrir la table d'attributs de Numparc"),
-            callback=self.open_numParc_attribute_table,
-            parent=self.iface.mainWindow())
-
-        self.id_openNumParcAttributeTab = len(self.actions) - 1
-
-        # bouton annuler dernier num parc
-        icon_path = ':/plugins/APNCad/icon63.png'
-        self.add_action(
-            icon_path,
-            text=self.tr(u'Annuler numéro de parcelle'),
-            callback=self.cancel_numParc,
-            toolbar=self.croquisToolbar,
-            add_to_toolbar=True,
-            parent=self.iface.mainWindow())
-
-        self.id_cancel_numParc = len(self.actions) - 1
-
-        # bouton LimiteCommune
-        icon_path = ':/plugins/APNCad/icon64.png'
-        self.add_action(
-            icon_path,
-            text=self.tr(u'Tracer une commune'),
-            callback=self.set_limiteCommune_tool,
-            toolbar=self.croquisToolbar,
-            add_to_toolbar=True,
-            parent=self.iface.mainWindow())
-
-        self.id_limiteCommune = len(self.actions) - 1
-
-        # bouton LimiteSection
-        icon_path = ':/plugins/APNCad/icon65.png'
-        self.add_action(
-            icon_path,
-            text=self.tr(u'Tracer une section'),
-            callback=self.set_limiteSection_tool,
-            toolbar=self.croquisToolbar,
-            add_to_toolbar=True,
-            parent=self.iface.mainWindow())
-
-        self.id_limiteSection = len(self.actions) - 1
-
-        # bouton LimiteLieudit
-        icon_path = ':/plugins/APNCad/icon66.png'
-        self.add_action(
-            icon_path,
-            text=self.tr(u'Tracer un lieu-dit'),
-            callback=self.set_limiteLieudit_tool,
-            toolbar=self.croquisToolbar,
-            add_to_toolbar=True,
-            parent=self.iface.mainWindow())
-
-        self.id_limiteLieudit = len(self.actions) - 1
-
-        # bouton fiscalite
-        icon_path = ':/plugins/APNCad/icon67.png'
-        self.add_action(
-            icon_path,
-            text=self.tr(u'Tracer une fiscalite'),
-            callback=self.set_fiscalite_tool,
-            toolbar=self.croquisToolbar,
-            add_to_toolbar=True,
-            parent=self.iface.mainWindow())
-
-        self.id_fiscalite = len(self.actions) - 1
-
-        # bouton GrandTexte
-        icon_path = ':/plugins/APNCad/icon68.png'
-        self.add_action(
-            icon_path,
-            text=self.tr(u'Tracer un grand texte'),
-            callback=self.set_grandTexte_tool,
-            toolbar=self.croquisToolbar,
-            add_to_toolbar=True,
-            parent=self.iface.mainWindow())
-
-        self.id_grandTexte = len(self.actions) - 1
-
-        # Bouton deroulant point
-        boutonMenuPoint = self.pointButton.menu()
-        boutonMenuPoint.addAction(self.actions[self.id_tracer_point])
-        self.pointButton.setDefaultAction(self.actions[self.id_tracer_point])  # action par default du bouton
-        boutonMenuPoint.addAction(self.actions[self.id_config_point])
-        boutonMenuPoint.addAction(self.actions[self.id_openAttributeTab])
-
-        # Bouton deroulant cote
-        boutonMenuCote = self.coteButton.menu()
-        boutonMenuCote.addAction(self.actions[self.id_coteSurLigne])
-        self.coteButton.setDefaultAction(self.actions[self.id_coteCourbe])  # action par default du bouton
-        boutonMenuCote.addAction(self.actions[self.id_coteSansLigne])
-        boutonMenuCote.addAction(self.actions[self.id_coteCourbe])
-        boutonMenuCote.addAction(self.actions[self.id_coteRepere])
-
-        # Bouton deroulant lignes
-        boutonMenuLigne = self.ligneButton.menu()
-        boutonMenuLigne.addAction(self.actions[self.id_ligneContinue])
-        self.ligneButton.setDefaultAction(self.actions[self.id_ligneContinue])  # action par default du bouton
-        boutonMenuLigne.addAction(self.actions[self.id_ligneDiscontinue])
-        boutonMenuLigne.addAction(self.actions[self.id_trottoir])
-
-        # Bouton deroulant murs
-        boutonMenuMur = self.murButton.menu()
-        boutonMenuMur.addAction(self.actions[self.id_murDroite])
-        self.murButton.setDefaultAction(self.actions[self.id_murDroite])  # action par default du bouton
-        boutonMenuMur.addAction(self.actions[self.id_murMilieu])
-
-        # Bouton deroulant texte
-        boutonMenuTexte = self.texteButton.menu()
-        boutonMenuTexte.addAction(self.actions[self.id_texte])
-        self.texteButton.setDefaultAction(self.actions[self.id_texte])  # action par default du bouton
-        boutonMenuTexte.addAction(self.actions[self.id_texteOriente])
-
-        # Bouton deroulant borne
-        boutonMenuBorne = self.borneButton.menu()
-        boutonMenuBorne.addAction(self.actions[self.id_borne])
-        self.borneButton.setDefaultAction(self.actions[self.id_borne])  # action par default du bouton
-        boutonMenuBorne.addAction(self.actions[self.id_borneRetrouvee])
-        boutonMenuBorne.addAction(self.actions[self.id_bornePolygo])
-        boutonMenuBorne.addAction(self.actions[self.id_clou])
-        boutonMenuBorne.addAction(self.actions[self.id_clouLimite])
-        boutonMenuBorne.addAction(self.actions[self.id_croixGravee])
-        boutonMenuBorne.addAction(self.actions[self.id_repereNivel])
-        boutonMenuBorne.addAction(self.actions[self.id_puit])
-        boutonMenuBorne.addAction(self.actions[self.id_ptDetail])
-
-        # Bouton deroulant mur (symbole)
-        boutonMenuMurMit = self.murMitButton.menu()
-        boutonMenuMurMit.addAction(self.actions[self.id_murMitoyen])
-        self.murMitButton.setDefaultAction(self.actions[self.id_murMitoyen])  # action par default du bouton
-        boutonMenuMurMit.addAction(self.actions[self.id_murNonMitoyen])
-        boutonMenuMurMit.addAction(self.actions[self.id_clotureMit])
-        boutonMenuMurMit.addAction(self.actions[self.id_clotureNonMit])
-        boutonMenuMurMit.addAction(self.actions[self.id_haieMit])
-        boutonMenuMurMit.addAction(self.actions[self.id_haieNonMit])
-        boutonMenuMurMit.addAction(self.actions[self.id_fosseMit])
-        boutonMenuMurMit.addAction(self.actions[self.id_fosseNonMit])
-
-        # Bouton deroulant couche
-        boutonMenuCouche = self.coucheButton.menu()
-        boutonMenuCouche.addAction(self.actions[self.id_panneauCouche])
-        self.coucheButton.setDefaultAction(self.actions[self.id_panneauCouche])  # action par default du bouton
-        boutonMenuCouche.addAction(self.actions[self.id_identifyLayer])
-
-        # Bouton deroulant translation
-        boutonMenuTranslation = self.translationButton.menu()
-        boutonMenuTranslation.addAction(self.actions[self.id_translater_feat])
-        self.translationButton.setDefaultAction(self.actions[self.id_translater_feat])  # action par default du bouton
-        boutonMenuTranslation.addAction(self.actions[self.id_copier_feat])
-
-        # Bouton deroulant visu
-        boutonMenuVisu = self.visuButton.menu()
-        boutonMenuVisu.addAction(self.actions[self.id_visuCroqRem])
-        self.visuButton.setDefaultAction(self.actions[self.id_visuCroqRem])  # action par default du bouton
-        boutonMenuVisu.addAction(self.actions[self.id_visuOrtho])
-        boutonMenuVisu.addAction(self.actions[self.id_freezeLayer])
-
-        # Bouton deroulant pj
-        boutonMenuPJ = self.pjButton.menu()
-        boutonMenuPJ.addAction(self.actions[self.id_image])
-        self.pjButton.setDefaultAction(self.actions[self.id_image])  # action par default du bouton
-        boutonMenuPJ.addAction(self.actions[self.id_das])
-        boutonMenuPJ.addAction(self.actions[self.id_info])
-
-        # Bouton deroulant num parc
-        boutonMenuNumParc = self.numParcButton.menu()
-        boutonMenuNumParc.addAction(self.actions[self.id_tracer_numParc])
-        self.numParcButton.setDefaultAction(self.actions[self.id_tracer_numParc])  # action par default du bouton
-        boutonMenuNumParc.addAction(self.actions[self.id_config_numParc])
-        boutonMenuNumParc.addAction(self.actions[self.id_openNumParcAttributeTab])
-
         # will be set False in config_point()
         self.first_start = True
-
-        # verifie la bonne connexion
-        # QMessageBox.information(   self.iface.mainWindow(),"Info", "connect = %s"%str(result) )
 
     # remettre la fenetre au premier plan apres enregistrement
     def set_crs_on_top(self):
@@ -1417,9 +1366,6 @@ class APNCad:
 
     # Choisir SCR
     def set_crs(self):
-
-        # self.dlgCrs.setWindowFlags(self.dlgCrs.windowFlags() | Qt.WindowStaysOnTopHint)
-
         self.dlgCrs.show()
         result = self.dlgCrs.exec_()
 
@@ -1430,7 +1376,7 @@ class APNCad:
             print(crs)
             # si le projet a été enregistré
             if QgsProject.instance().write():
-                self.actions[self.id_generate_layer].setEnabled(True)
+                self.actions["action_generate_layer"].setEnabled(True)
             else:
                 self.iface.messageBar().pushMessage(
                     "Le projet n'a pas été enregistré : impossible de créer les couches", level=Qgis.Critical,
@@ -1442,7 +1388,6 @@ class APNCad:
 
     # Generer couches pour nouveau projet
     def generate_layers(self):
-
         # crs du projet
         crs = QgsProject.instance().crs().authid()
 
@@ -1545,7 +1490,7 @@ class APNCad:
 
         # enable tools
         self.start_function()
-        self.actions[self.id_generate_layer].setEnabled(False)
+        self.actions["action_generate_layer"].setEnabled(False)
 
     # Completer un projet existant avec des nouvelles couches
     def build_project(self):
@@ -1637,7 +1582,7 @@ class APNCad:
                     writer.addFeature(feat)
                     layer = self.iface.addVectorLayer(fn, '', 'ogr')
                     layer.setName(couche[0])
-                    del (writer)
+                    del writer
 
                     # On supprime l'entite fictive ajoutee
                     layer.dataProvider().deleteFeatures([0])
@@ -1728,248 +1673,15 @@ class APNCad:
     # Bouton start
     def start_function(self):
 
-        try:
-            # layer = QgsVectorLayer(prjfi.absolutePath()+"/point.shp", "point", "ogr")
-            self.layerPoint = QgsProject.instance().mapLayersByName("Point")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche Point n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerCoteSurLigne = QgsProject.instance().mapLayersByName("coteSURLigne")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche coteSURLigne n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerCoteSansLigne = QgsProject.instance().mapLayersByName("cotesansligne")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche cotesansligne n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerLigneContinue = QgsProject.instance().mapLayersByName("LigneContinue")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche LigneContinue n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerLigneDiscontinue = QgsProject.instance().mapLayersByName("LigneDiscontinue")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche LigneDiscontinue n'existe pas", level=Qgis.Critical,
-                                                duration=3)
-
-        try:
-            self.layerBorne = QgsProject.instance().mapLayersByName("borne")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche borne n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerClotureMit = QgsProject.instance().mapLayersByName("clotureMit")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche clotureMit n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerClotureNonMit = QgsProject.instance().mapLayersByName("Cloturenonmit")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche Cloturenonmit n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerMurMitoyen = QgsProject.instance().mapLayersByName("murmitoyen")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche murmitoyen n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerMurNonMitoyen = QgsProject.instance().mapLayersByName("murnonmi")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche murnonmi n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerBorneRetrouvee = QgsProject.instance().mapLayersByName("borne_retrouvee")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche borne_retrouvee n'existe pas", level=Qgis.Critical,
-                                                duration=3)
-
-        try:
-            self.layerBiffer = QgsProject.instance().mapLayersByName("biffer")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche biffer n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerMurDroite = QgsProject.instance().mapLayersByName("MurDroite")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche MurDroite n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerTexte = QgsProject.instance().mapLayersByName("Texte")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche Texte n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerTexteOriente = QgsProject.instance().mapLayersByName("TexteOriente")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche TexteOriente n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerMurMilieu = QgsProject.instance().mapLayersByName("MurMilieu")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche MurMilieu n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerImage = QgsProject.instance().mapLayersByName("image")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche image n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerDebord = QgsProject.instance().mapLayersByName("debordT")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche debordT n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerPolygone = QgsProject.instance().mapLayersByName("polygone")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche polygone n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerHaieMit = QgsProject.instance().mapLayersByName("Haiemit")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche Haiemit n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerHaieNonMit = QgsProject.instance().mapLayersByName("HaieNonMit")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche HaieNonMit n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerFosseMit = QgsProject.instance().mapLayersByName("FosseMit")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche FosseMit n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerFosseNonMit = QgsProject.instance().mapLayersByName("Fossenonmit")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche Fossenonmit n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerClou = QgsProject.instance().mapLayersByName("clou")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche clou n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerClouLimite = QgsProject.instance().mapLayersByName("clouLimite")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche clouLimite n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerBornePolygo = QgsProject.instance().mapLayersByName("BornePolygo")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche BornePolygo n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerCroixGravee = QgsProject.instance().mapLayersByName("CroixGravee")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche CroixGravee n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerRepereNivel = QgsProject.instance().mapLayersByName("RepereNivel")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche RepereNivel n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerCoteRepere = QgsProject.instance().mapLayersByName("Coterepere")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche Coterepere n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerDas = QgsProject.instance().mapLayersByName("Das")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche Das n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerPuit = QgsProject.instance().mapLayersByName("puit")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche puit n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerPtDetail = QgsProject.instance().mapLayersByName("PtDetail")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche PtDetail n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerTrottoir = QgsProject.instance().mapLayersByName("trottoir")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche trottoir n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerInfo = QgsProject.instance().mapLayersByName("information")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche information n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerNumParc = QgsProject.instance().mapLayersByName("Numparc")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche Numparc n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerGrandTexte = QgsProject.instance().mapLayersByName("GrandTexte")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche GrandTexte n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerFisc = QgsProject.instance().mapLayersByName("Fiscalite")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche Fiscalite n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerLimiteCom = QgsProject.instance().mapLayersByName("LimiteCommune")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche LimiteCommune n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerLimiteSec = QgsProject.instance().mapLayersByName("LimiteSection")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche LimiteSection n'existe pas", level=Qgis.Critical, duration=3)
-
-        try:
-            self.layerLimiteLieudit = QgsProject.instance().mapLayersByName("LimiteLieuDit")[0]
-        except Exception as e:
-            print(e)
-            self.iface.messageBar().pushMessage("La couche LimiteLieuDit n'existe pas", level=Qgis.Critical, duration=3)
+        # dict containing every info about layers (layer instance, type, nb points,
+        self.layers = {}
+        for couche in self.listLayers:
+            try:
+                self.layers[couche[0]] = QgsProject.instance().mapLayersByName(couche[0])[0]
+            except Exception as e:
+                print(e)
+                self.iface.messageBar().pushMessage("La couche {} n'existe pas".format(couche[0]), level=Qgis.Critical,
+                                                    duration=3)
 
         self.currentLayer = self.iface.activeLayer()
 
@@ -1977,10 +1689,10 @@ class APNCad:
         # construit liste id points
         try:
             listFeatures = []
-            for feature in self.layerPoint.getFeatures():
+            for feature in self.layers['Point'].getFeatures():
                 listFeatures.append(feature.id())
 
-            self.numPoint = self.layerPoint.getFeature(max(listFeatures)).attributes()[0] + 1
+            self.numPoint = self.layers['Point'].getFeature(max(listFeatures)).attributes()[0] + 1
             self.lastPoint.setText(str(self.numPoint))
         except Exception as e:
             print(e)
@@ -1991,10 +1703,10 @@ class APNCad:
         # construit liste id num parc
         try:
             listFeatures = []
-            for feature in self.layerNumParc.getFeatures():
+            for feature in self.layers['Numparc'].getFeatures():
                 listFeatures.append(feature.id())
 
-            self.numParc = self.layerNumParc.getFeature(max(listFeatures)).attributes()[0] + 1
+            self.numParc = self.layers['Numparc'].getFeature(max(listFeatures)).attributes()[0] + 1
             self.lastNumParc.setText(str(self.numParc))
         except Exception as e:
             print(e)
@@ -2002,8 +1714,8 @@ class APNCad:
             self.lastNumParc.setText(str(self.numParc))
 
         # activer tous les boutons (sauf annuler pt et numParc)
-        for i in range(len(self.actions)):
-            if i != self.id_cancel and i != self.id_generate_layer and i != self.id_cancel_numParc:
+        for i in self.actions.keys():
+            if i != "action_cancel_point" and i != "action_generate_layer" and i != "action_cancel_numparc":
                 self.actions[i].setEnabled(True)
 
         # desactiver bouton start
@@ -2011,10 +1723,10 @@ class APNCad:
 
     # Tracer point
     def set_point_tool(self):
-        self.currentLayer = self.layerPoint
+        self.currentLayer = self.layers['Point']
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
-        self.canvas.setMapTool(self.clickTool)
+        self.canvas.setMapTool(self.pointTool)
 
     def display_point(self, point, button):
 
@@ -2026,7 +1738,7 @@ class APNCad:
         self.currentLayer.commitChanges()
 
         # autoriser annulation
-        self.actions[self.id_cancel].setEnabled(True)
+        self.actions["action_cancel_point"].setEnabled(True)
 
         # actualisation num suivant
 
@@ -2036,8 +1748,6 @@ class APNCad:
         self.refresh_layer(self.currentLayer)
 
     def config_point(self):
-        if self.first_start:
-            self.first_start = False
 
         # show the dialog
         self.dlgConfigPt.show()
@@ -2069,7 +1779,7 @@ class APNCad:
         self.dlgConfigPt.lineedit_inc.clearValue()
 
     def open_attribute_table(self):
-        self.iface.showAttributeTable(self.layerPoint)
+        self.iface.showAttributeTable(self.layers['Point'])
 
     # erase last displayed point
     def cancel(self):
@@ -2077,23 +1787,23 @@ class APNCad:
         lastFeatureId = -1
 
         # Loop through all features in the layer
-        for f in self.layerPoint.getFeatures():
+        for f in self.layers['Point'].getFeatures():
             if f.id() > lastFeatureId:
                 lastFeatureId = f.id()
 
         if lastFeatureId >= 0:
-            self.layerPoint.dataProvider().deleteFeatures([lastFeatureId])
-            self.refresh_layer(self.layerPoint)
+            self.layers['Point'].dataProvider().deleteFeatures([lastFeatureId])
+            self.refresh_layer(self.layers['Point'])
             self.numPoint = self.numPoint - self.increment
             self.lastPoint.setText(str(self.numPoint))
 
         # aucun point dans la couche
         else:
-            self.actions[self.id_cancel].setEnabled(False)
+            self.actions["action_cancel_point"].setEnabled(False)
 
     # Tracer num parc
     def set_numParc_tool(self):
-        self.currentLayer = self.layerNumParc
+        self.currentLayer = self.layers['Numparc']
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.canvas.setMapTool(self.numParcTool)
@@ -2108,7 +1818,7 @@ class APNCad:
         self.currentLayer.commitChanges()
 
         # autoriser annulation
-        self.actions[self.id_cancel_numParc].setEnabled(True)
+        self.actions["action_cancel_numparc"].setEnabled(True)
 
         # actualisation num suivant
 
@@ -2143,7 +1853,7 @@ class APNCad:
         self.dlgNumParc.lineedit_inc.clearValue()
 
     def open_numParc_attribute_table(self):
-        self.iface.showAttributeTable(self.layerNumParc)
+        self.iface.showAttributeTable(self.layers['Numparc'])
 
     # erase last displayed point
     def cancel_numParc(self):
@@ -2151,77 +1861,37 @@ class APNCad:
         lastFeatureId = -1
 
         # Loop through all features in the layer
-        for f in self.layerNumParc.getFeatures():
+        for f in self.layers['Numparc'].getFeatures():
             if f.id() > lastFeatureId:
                 lastFeatureId = f.id()
 
         if lastFeatureId >= 0:
-            self.layerNumParc.dataProvider().deleteFeatures([lastFeatureId])
-            self.refresh_layer(self.layerNumParc)
+            self.layers['Numparc'].dataProvider().deleteFeatures([lastFeatureId])
+            self.refresh_layer(self.layers['Numparc'])
             self.numParc = self.numParc - self.incParc
             self.lastNumParc.setText(str(self.numParc))
 
         # aucun numParc dans la couche
         else:
-            self.actions[self.id_cancel_numParc].setEnabled(False)
+            self.actions["action_cancel_numparc"].setEnabled(False)
 
-    def set_limiteCommune_tool(self):
-        self.currentLayer = self.layerLimiteCom
+    def set_general_tool(self, layer_name,
+                         button_menu=None,
+                         default_action=None,
+                         attribute=False,
+                         nb_points_polyline=0):
+        self.currentLayer = self.layers[layer_name]
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
-        self.attribut = False
-        self.nb_pts_poly = 100
-        self.canvas.setMapTool(self.polyligneTool)
+        self.attribute = attribute
+        if nb_points_polyline == 0:
+            self.canvas.setMapTool(self.punctualTool)
+        else:
+            self.canvas.setMapTool(self.polyligneTool)
+            self.polyligneTool.nb_pts_poly = nb_points_polyline
 
-    def set_limiteSection_tool(self):
-        self.currentLayer = self.layerLimiteSec
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = False
-        self.nb_pts_poly = 100
-        self.canvas.setMapTool(self.polyligneTool)
-
-    def set_limiteLieudit_tool(self):
-        self.currentLayer = self.layerLimiteLieudit
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = False
-        self.nb_pts_poly = 100
-        self.canvas.setMapTool(self.polyligneTool)
-
-    def set_fiscalite_tool(self):
-        self.currentLayer = self.layerFisc
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = False
-        self.nb_pts_poly = 100
-        self.canvas.setMapTool(self.polyligneTool)
-
-    def set_grandTexte_tool(self):
-        self.currentLayer = self.layerGrandTexte
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = True
-        self.canvas.setMapTool(self.punctualTool)
-
-    # Tracer cote
-    def set_coteSurLigne_tool(self):
-        self.currentLayer = self.layerCoteSurLigne
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = True
-        self.nb_pts_poly = 2
-        self.canvas.setMapTool(self.polyligneTool)
-        self.coteButton.setDefaultAction(self.actions[self.id_coteSurLigne])
-
-    def set_coteSansLigne_tool(self):
-        self.currentLayer = self.layerCoteSansLigne
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = True
-        self.nb_pts_poly = 2
-        self.canvas.setMapTool(self.polyligneTool)
-        self.coteButton.setDefaultAction(self.actions[self.id_coteSansLigne])
+        if button_menu is not None:
+            button_menu.setDefaultAction(self.actions[default_action])
 
     def display_punctual(self, point, button):
 
@@ -2231,35 +1901,17 @@ class APNCad:
         self.refresh_layer(self.currentLayer)
         self.currentLayer.commitChanges()
 
-        if self.attribut:
-            self.apply_new_attribute()
-
-    def add_point(self, point, button):
-        pt = QgsPoint(point.x(), point.y())
-        self.pointList.append(pt)
-
-        if len(self.pointList) == self.nb_pts_poly:
-            self.display_polyligne()
-
-    def display_polyligne(self):
-
-        feat = QgsFeature()
-        feat.setGeometry(QgsGeometry.fromPolyline(self.pointList))
-        self.currentLayer.dataProvider().addFeatures([feat])
-        self.refresh_layer(self.currentLayer)
-        self.pointList = []
-        self.currentLayer.commitChanges()
-
-        if self.attribut:
+        if self.attribute:
             self.apply_new_attribute()
 
     def set_coteCourbe_tool(self):
-        self.currentLayer = self.layerCoteSurLigne
+        self.currentLayer = self.layers['coteSURLigne']
+        self.attribute = True
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         # self.iface.actionAddFeature().trigger()
         self.canvas.setMapTool(self.arcTool)
-        self.coteButton.setDefaultAction(self.actions[self.id_coteCourbe])
+        self.coteButton.setDefaultAction(self.actions["action_cote_courbe"])
 
     def display_cote_courbe(self, point, button):
 
@@ -2296,66 +1948,67 @@ class APNCad:
             self.apply_new_attribute()
 
     def apply_new_attribute(self):
-        # get last feature
-        # other option: feature = list(feature_iterator)[N - 1] to get Nth feature
-        for feature in self.currentLayer.getFeatures():
-            ft = feature
 
-        # Special editing window for some layers (image)
-        if self.currentLayer == self.layerImage or self.currentLayer == self.layerDas:
-            dlg = self.dlgImage
+        if self.attribute:
+            # get last feature
+            # other option: feature = list(feature_iterator)[N - 1] to get Nth feature
+            for feature in self.currentLayer.getFeatures():
+                ft = feature
 
-        # General case for all other layers
-        else:
-            dlg = self.dlgAttribut
+            # Special editing window for some layers (image)
+            if self.currentLayer == self.layers['image'] or self.currentLayer == self.layers['Das']:
+                dlg = self.dlgImage
 
-        # fenetre entrer cote
-        dlg.show()
-        dlg.lineedit_attribut.setFocus()
-        dlg.comboBox_field.addItems([field.name() for field in self.currentLayer.fields()])
+            # General case for all other layers
+            else:
+                dlg = self.dlgAttribut
 
-        result = dlg.exec_()
-        # See if OK was pressed
-        if result:
-            try:
-                newValue = dlg.lineedit_attribut.value()
-                print(newValue)
+            # fenetre entrer cote
+            dlg.show()
+            dlg.lineedit_attribut.setFocus()
+            dlg.comboBox_field.addItems([field.name() for field in self.currentLayer.fields()])
 
-                index = dlg.comboBox_field.currentIndex()
-                attrs = {index: newValue}
-                self.currentLayer.dataProvider().changeAttributeValues({ft.id(): attrs})
+            result = dlg.exec_()
+            # See if OK was pressed
+            if result:
+                try:
+                    newValue = dlg.lineedit_attribut.value()
+                    print(newValue)
+
+                    index = dlg.comboBox_field.currentIndex()
+                    attrs = {index: newValue}
+                    self.currentLayer.dataProvider().changeAttributeValues({ft.id(): attrs})
+                    self.refresh_layer(self.currentLayer)
+
+                except Exception as e:
+                    print(e)
+                    pass
+            else:
+                self.currentLayer.dataProvider().deleteFeatures([ft.id()])
                 self.refresh_layer(self.currentLayer)
 
-
-            except Exception as e:
-                print(e)
-                pass
-        else:
-            self.currentLayer.dataProvider().deleteFeatures([ft.id()])
-            self.refresh_layer(self.currentLayer)
-
-        dlg.lineedit_attribut.clearValue()
-        # signal must be blocked because clear triggers current index changed signal
-        dlg.comboBox_field.blockSignals(True)
-        dlg.comboBox_field.clear()
-        dlg.comboBox_field.blockSignals(False)
+            dlg.lineedit_attribut.clearValue()
+            # signal must be blocked because clear triggers current index changed signal
+            dlg.comboBox_field.blockSignals(True)
+            dlg.comboBox_field.clear()
+            dlg.comboBox_field.blockSignals(False)
 
     # valider polyligne
     def clic_droit(self):
-
-        if len(self.pointList) > 0:
-            self.display_polyligne()
-        else:
-            pyautogui.moveTo(800, 400)
-            pyautogui.click(button='right')
+        mouse_event = QMouseEvent(
+            QMouseEvent.MouseButtonRelease,
+            self.canvas.mapToGlobal(self.canvas.rect().center()),
+            Qt.RightButton,
+            Qt.RightButton,
+            Qt.NoModifier,
+        )
+        self.canvas.mouseReleaseEvent(mouse_event)
 
     def appui_echap(self):
 
         self.pointList = []
-        pyautogui.moveTo(800, 400)
-        pyautogui.click(button='left')
-        # pyautogui.press('tab', presses=4)
-        pyautogui.press('esc')
+        key_event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier)
+        self.canvas.keyPressEvent(key_event)
 
         # self.canvas.setMapTool(self.toolPan)
 
@@ -2394,19 +2047,19 @@ class APNCad:
             self.refresh_layer(self.currentLayer)
 
     # Modify attributes
-    def set_modif_tool(self):
+    def set_edit_tool(self):
         # self.dlg.reject()   #ferme la fenetre
-        self.canvas.setMapTool(self.modifTool)
+        self.canvas.setMapTool(self.editAttributeTool)
         self.canvas.setCursor(QCursor(Qt.PointingHandCursor))
 
-    def modify_attribute(self, point, button):
+    def edit_attribute(self, point, button):
         self.save_layers()
 
         obj = self.find_nearest_features(point, button)
         if obj:
 
             # Special edit window for some layers (info)
-            if self.currentLayer == self.layerInfo:
+            if self.currentLayer == self.layers['information']:
                 self.dlgInfo.show()
                 self.dlgInfo.textEdit.setFocus()
                 try:
@@ -2431,7 +2084,7 @@ class APNCad:
                 self.dlgInfo.textEdit.clear()
 
             # Image layer editing
-            elif self.currentLayer == self.layerImage or self.currentLayer == self.layerDas:
+            elif self.currentLayer == self.layers['image'] or self.currentLayer == self.layers['Das']:
                 self.dlgImage.show()
                 self.dlgImage.lineedit_attribut.setFocus()
                 self.dlgImage.comboBox_field.addItems([field.name() for field in self.currentLayer.fields()])
@@ -2521,13 +2174,13 @@ class APNCad:
         self.copy = False
         self.canvas.setMapTool(self.copyTool)
         self.save_layers()
-        self.translationButton.setDefaultAction(self.actions[self.id_translater_feat])
+        self.translationButton.setDefaultAction(self.actions["action_move"])
 
     def set_copy_tool(self):
         self.copy = True
         self.canvas.setMapTool(self.copyTool)
         self.save_layers()
-        self.translationButton.setDefaultAction(self.actions[self.id_copier_feat])
+        self.translationButton.setDefaultAction(self.actions["action_copy"])
 
     def translate_copy_feature(self, point, button):
 
@@ -2536,8 +2189,6 @@ class APNCad:
 
             obj = self.find_nearest_features(point, button)
             if obj:
-
-                # self.select_nearest_feature(point, button)
                 pt = QgsPoint(point.x(), point.y())
                 self.pointList.append(pt)
                 print(self.currentLayer.name())
@@ -2561,65 +2212,8 @@ class APNCad:
             self.currentLayer.commitChanges()
             self.currentLayer.removeSelection()
 
-    def set_ligneContinue_tool(self):
-        self.currentLayer = self.layerLigneContinue
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.iface.actionAddFeature().trigger()
-        self.ligneButton.setDefaultAction(self.actions[self.id_ligneContinue])
-
-    def set_ligneDiscontinue_tool(self):
-        self.currentLayer = self.layerLigneDiscontinue
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.iface.actionAddFeature().trigger()
-        self.ligneButton.setDefaultAction(self.actions[self.id_ligneDiscontinue])
-
-    def set_murDroite_tool(self):
-        self.currentLayer = self.layerMurDroite
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = True
-        self.nb_pts_poly = 100
-        self.canvas.setMapTool(self.polyligneTool)
-        self.murButton.setDefaultAction(self.actions[self.id_murDroite])
-
-    def set_murMilieu_tool(self):
-        self.currentLayer = self.layerMurMilieu
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = True
-        self.nb_pts_poly = 100
-        self.canvas.setMapTool(self.polyligneTool)
-        self.murButton.setDefaultAction(self.actions[self.id_murMilieu])
-
-    def set_Texte_tool(self):
-        self.currentLayer = self.layerTexte
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = True
-        self.canvas.setMapTool(self.punctualTool)
-        self.texteButton.setDefaultAction(self.actions[self.id_texte])
-
-    def set_image_tool(self):
-        self.currentLayer = self.layerImage
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = True
-        self.canvas.setMapTool(self.punctualTool)
-        self.pjButton.setDefaultAction(self.actions[self.id_image])
-
-    def set_texteOriente_tool(self):
-        self.currentLayer = self.layerTexteOriente
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = True
-        self.nb_pts_poly = 2
-        self.canvas.setMapTool(self.polyligneTool)
-        self.texteButton.setDefaultAction(self.actions[self.id_texteOriente])
-
     def set_debord_tool(self):
-        self.currentLayer = self.layerDebord
+        self.currentLayer = self.layers['debordT']
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.canvas.setMapTool(self.debordTool)
@@ -2638,44 +2232,8 @@ class APNCad:
         self.dlgDebord.lineedit_debord.clearValue()
         self.dlgClavierNum.lineedit_valeur.clearValue()
 
-    def set_debord0(self):
-        self.debord = "0"
-        self.dlgDebord.reject()
-
-    def set_debord10(self):
-        self.debord = "10"
-        self.dlgDebord.reject()
-
-    def set_debord20(self):
-        self.debord = "20"
-        self.dlgDebord.reject()
-
-    def set_debord30(self):
-        self.debord = "30"
-        self.dlgDebord.reject()
-
-    def set_debord40(self):
-        self.debord = "40"
-        self.dlgDebord.reject()
-
-    def set_debord50(self):
-        self.debord = "50"
-        self.dlgDebord.reject()
-
-    def set_debord60(self):
-        self.debord = "60"
-        self.dlgDebord.reject()
-
-    def set_debord70(self):
-        self.debord = "70"
-        self.dlgDebord.reject()
-
-    def set_debord80(self):
-        self.debord = "80"
-        self.dlgDebord.reject()
-
-    def set_debord90(self):
-        self.debord = "90"
+    def set_debord(self, debord):
+        self.debord = debord
         self.dlgDebord.reject()
 
     def display_debord(self, point, button):
@@ -2688,221 +2246,49 @@ class APNCad:
         self.currentLayer.commitChanges()
         self.refresh_layer(self.currentLayer)
 
-    def set_borne_tool(self):
-        self.currentLayer = self.layerBorne
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.iface.actionAddFeature().trigger()
-        self.borneButton.setDefaultAction(self.actions[self.id_borne])
-
-    def set_bornePolygo_tool(self):
-        self.currentLayer = self.layerBornePolygo
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = True
-        self.canvas.setMapTool(self.punctualTool)
-        self.borneButton.setDefaultAction(self.actions[self.id_bornePolygo])
-
-    def set_borneRetrouvee_tool(self):
-        self.currentLayer = self.layerBorneRetrouvee
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.iface.actionAddFeature().trigger()
-        self.borneButton.setDefaultAction(self.actions[self.id_borneRetrouvee])
-
-    def set_murMitoyen_tool(self):
-        self.currentLayer = self.layerMurMitoyen
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = False
-        self.nb_pts_poly = 2
-        self.canvas.setMapTool(self.polyligneTool)
-        self.murMitButton.setDefaultAction(self.actions[self.id_murMitoyen])
-
-    def set_murNonMitoyen_tool(self):
-        self.currentLayer = self.layerMurNonMitoyen
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = False
-        self.nb_pts_poly = 2
-        self.canvas.setMapTool(self.polyligneTool)
-        self.murMitButton.setDefaultAction(self.actions[self.id_murNonMitoyen])
-
-    def set_haieMitoyen_tool(self):
-        self.currentLayer = self.layerHaieMit
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = False
-        self.nb_pts_poly = 2
-        self.canvas.setMapTool(self.polyligneTool)
-        self.murMitButton.setDefaultAction(self.actions[self.id_haieMit])
-
-    def set_haieNonMitoyen_tool(self):
-        self.currentLayer = self.layerHaieNonMit
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = False
-        self.nb_pts_poly = 2
-        self.canvas.setMapTool(self.polyligneTool)
-        self.murMitButton.setDefaultAction(self.actions[self.id_haieNonMit])
-
-    def set_fosseMitoyen_tool(self):
-        self.currentLayer = self.layerFosseMit
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = False
-        self.nb_pts_poly = 2
-        self.canvas.setMapTool(self.polyligneTool)
-        self.murMitButton.setDefaultAction(self.actions[self.id_fosseMit])
-
-    def set_fosseNonMitoyen_tool(self):
-        self.currentLayer = self.layerFosseNonMit
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = False
-        self.nb_pts_poly = 2
-        self.canvas.setMapTool(self.polyligneTool)
-        self.murMitButton.setDefaultAction(self.actions[self.id_fosseNonMit])
-
-    def set_clotureMitoyen_tool(self):
-        self.currentLayer = self.layerClotureMit
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.iface.actionAddFeature().trigger()
-        self.murMitButton.setDefaultAction(self.actions[self.id_clotureMit])
-
-    def set_clotureNonMitoyen_tool(self):
-        self.currentLayer = self.layerClotureNonMit
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = False
-        self.nb_pts_poly = 2
-        self.canvas.setMapTool(self.polyligneTool)
-        self.murMitButton.setDefaultAction(self.actions[self.id_clotureNonMit])
-
-    def set_clou_tool(self):
-        self.currentLayer = self.layerClou
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = True
-        self.canvas.setMapTool(self.punctualTool)
-        self.borneButton.setDefaultAction(self.actions[self.id_clou])
-
-    def set_clouLimite_tool(self):
-        self.currentLayer = self.layerClouLimite
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = False
-        self.nb_pts_poly = 2
-        self.canvas.setMapTool(self.polyligneTool)
-        self.borneButton.setDefaultAction(self.actions[self.id_clouLimite])
-
-    def set_biffer_tool(self):
-        self.currentLayer = self.layerBiffer
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = False
-        self.nb_pts_poly = 2
-        self.canvas.setMapTool(self.polyligneTool)
-
     def set_polygone_tool(self):
-        self.currentLayer = self.layerPolygone
+        self.currentLayer = self.layers['polygone']
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
-        self.iface.actionAddFeature().trigger()
+        self.canvas.setMapTool(self.polygonTool)
+        # self.iface.actionAddFeature().trigger()
 
-    def set_croixGravee_tool(self):
-        self.currentLayer = self.layerCroixGravee
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = False
-        self.canvas.setMapTool(self.punctualTool)
-        self.borneButton.setDefaultAction(self.actions[self.id_croixGravee])
-
-    def set_repereNivel_tool(self):
-        self.currentLayer = self.layerRepereNivel
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = True
-        self.nb_pts_poly = 2
-        self.canvas.setMapTool(self.polyligneTool)
-        self.borneButton.setDefaultAction(self.actions[self.id_repereNivel])
-
-    def set_coteRepere_tool(self):
-        self.currentLayer = self.layerCoteRepere
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = True
-        self.nb_pts_poly = 3
-        self.canvas.setMapTool(self.polyligneTool)
-        self.coteButton.setDefaultAction(self.actions[self.id_coteRepere])
-
+    # Default tool (two fields)
     def set_das_tool(self):
-        self.currentLayer = self.layerDas
+        self.currentLayer = self.layers['Das']
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.iface.actionAddFeature().trigger()
-        self.pjButton.setDefaultAction(self.actions[self.id_das])
+        self.pjButton.setDefaultAction(self.actions["action_das"])
 
-    def set_puit_tool(self):
-        self.currentLayer = self.layerPuit
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = False
-        self.canvas.setMapTool(self.punctualTool)
-        self.borneButton.setDefaultAction(self.actions[self.id_puit])
-
-    def set_ptDetail_tool(self):
-        self.currentLayer = self.layerPtDetail
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.attribut = True
-        self.canvas.setMapTool(self.punctualTool)
-        self.borneButton.setDefaultAction(self.actions[self.id_ptDetail])
-
-    def set_trottoir_tool(self):
-        self.currentLayer = self.layerTrottoir
-        self.iface.setActiveLayer(self.currentLayer)
-        self.currentLayer.startEditing()
-        self.iface.actionAddFeature().trigger()
-        self.ligneButton.setDefaultAction(self.actions[self.id_trottoir])
-
+    # Default tool (bigger text field)
     def set_info_tool(self):
-        self.currentLayer = self.layerInfo
+        self.currentLayer = self.layers['information']
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
         self.iface.actionAddFeature().trigger()
-        self.pjButton.setDefaultAction(self.actions[self.id_info])
+        self.pjButton.setDefaultAction(self.actions["action_info"])
 
-    def make_browse_file(self, lineedit, file_filter):
-        def browse():
-            fname = QFileDialog.getOpenFileName(None, 'Ouvrir Fichier',
-                                                QFileInfo(QgsProject.instance().fileName()).absolutePath(),
-                                                file_filter)
-            lineedit.setText(fname[0])
+    def browse_file(self, lineedit, file_filter):
+        fname = QFileDialog.getOpenFileName(None, 'Ouvrir Fichier',
+                                            QFileInfo(QgsProject.instance().fileName()).absolutePath(),
+                                            file_filter)
+        lineedit.setText(fname[0])
 
-        return browse
-
-    def make_browse_folder(self, lineedit):
-        def browse():
-            path = QFileDialog.getExistingDirectory(None, "Choisir Dossier",
-                                                    QFileInfo(QgsProject.instance().fileName()).absolutePath())
-            # if path is selected
-            if path:
-                lineedit.setText(path)
-
-        return browse
+    def browse_folder(self, lineedit):
+        path = QFileDialog.getExistingDirectory(None, "Choisir Dossier",
+                                                QFileInfo(QgsProject.instance().fileName()).absolutePath())
+        # if path is selected
+        if path:
+            lineedit.setText(path)
 
     def select_attribute_field(self, lineedit, combobox):
-        def select_field():
-            index = combobox.currentIndex()
-            feat = self.currentLayer.selectedFeatures()
-            if len(feat) > 0:
-                attributes = feat[0].attributes()
-                old_attr = attributes[index]
-                lineedit.setText(str(old_attr))
-
-        return select_field
+        index = combobox.currentIndex()
+        feat = self.currentLayer.selectedFeatures()
+        if len(feat) > 0:
+            attributes = feat[0].attributes()
+            old_attr = attributes[index]
+            lineedit.setText(str(old_attr))
 
     def open_camera(self):
 
@@ -2972,75 +2358,28 @@ class APNCad:
         # getting current camera name
         # self.current_camera_name = self.available_cameras[i].description()
 
-    def make_clavier_num(self, lineedit):
-        # necessary to call a function with parameters when button clavier is pressed
-        def clavier_num():
-            self.dlgClavierNum.show()
+    def clavier_num(self, lineedit):
+        self.dlgClavierNum.show()
 
-            result = self.dlgClavierNum.exec_()
-            print(lineedit.value())
-            # See if OK was pressed
-            if result:
-                txt = lineedit.value() + self.dlgClavierNum.lineedit_valeur.value()
-                lineedit.setText(txt)
-                self.dlgClavierNum.lineedit_valeur.clearValue()
+        result = self.dlgClavierNum.exec_()
+        print(lineedit.value())
+        # See if OK was pressed
+        if result:
+            txt = lineedit.value() + self.dlgClavierNum.lineedit_valeur.value()
+            lineedit.setText(txt)
+            self.dlgClavierNum.lineedit_valeur.clearValue()
 
-        return clavier_num
-
-    def key_0(self):
+    def key_value(self, key):
         value = self.dlgClavierNum.lineedit_valeur.value()
-        self.dlgClavierNum.lineedit_valeur.setText(value + "0")
-
-    def key_1(self):
-        value = self.dlgClavierNum.lineedit_valeur.value()
-        self.dlgClavierNum.lineedit_valeur.setText(value + "1")
-
-    def key_2(self):
-        value = self.dlgClavierNum.lineedit_valeur.value()
-        self.dlgClavierNum.lineedit_valeur.setText(value + "2")
-
-    def key_3(self):
-        value = self.dlgClavierNum.lineedit_valeur.value()
-        self.dlgClavierNum.lineedit_valeur.setText(value + "3")
-
-    def key_4(self):
-        value = self.dlgClavierNum.lineedit_valeur.value()
-        self.dlgClavierNum.lineedit_valeur.setText(value + "4")
-
-    def key_5(self):
-        value = self.dlgClavierNum.lineedit_valeur.value()
-        self.dlgClavierNum.lineedit_valeur.setText(value + "5")
-
-    def key_6(self):
-        value = self.dlgClavierNum.lineedit_valeur.value()
-        self.dlgClavierNum.lineedit_valeur.setText(value + "6")
-
-    def key_7(self):
-        value = self.dlgClavierNum.lineedit_valeur.value()
-        self.dlgClavierNum.lineedit_valeur.setText(value + "7")
-
-    def key_8(self):
-        value = self.dlgClavierNum.lineedit_valeur.value()
-        self.dlgClavierNum.lineedit_valeur.setText(value + "8")
-
-    def key_9(self):
-        value = self.dlgClavierNum.lineedit_valeur.value()
-        self.dlgClavierNum.lineedit_valeur.setText(value + "9")
-
-    def key_coma(self):
-        value = self.dlgClavierNum.lineedit_valeur.value()
-        self.dlgClavierNum.lineedit_valeur.setText(value + ".")
+        self.dlgClavierNum.lineedit_valeur.setText(value + key)
 
     def key_del(self):
         value = self.dlgClavierNum.lineedit_valeur.value()
         self.dlgClavierNum.lineedit_valeur.setText(value[:-1])
 
     def fill_from_combo(self, combo, lineedit):
-        def fill():
-            text = self.dlgAttribut.comboBox_texte.currentText()
-            lineedit.setText(text)
-
-        return fill
+        text = combo.currentText()
+        lineedit.setText(text)
 
     # identify the layer of a selected object
     def set_identifyLayer_tool(self):
@@ -3077,7 +2416,7 @@ class APNCad:
 
     # montrer cacher texte croqrem
     def visu_textCroqRem(self):
-        self.visuButton.setDefaultAction(self.actions[self.id_visuCroqRem])
+        self.visuButton.setDefaultAction(self.actions["action_display_croqrem"])
         # Get layer Text in group CroqRem
         root = QgsProject.instance().layerTreeRoot()
         couche = None
@@ -3097,7 +2436,7 @@ class APNCad:
 
     # montrer cacher Ortho
     def visu_Ortho(self):
-        self.visuButton.setDefaultAction(self.actions[self.id_visuOrtho])
+        self.visuButton.setDefaultAction(self.actions["action_display_ortho"])
 
         # Get layer Text in group Ortho
         root = QgsProject.instance().layerTreeRoot()
@@ -3206,25 +2545,15 @@ class APNCad:
                     self.iface.messageBar().pushMessage("Mauvais format de données", level=Qgis.Critical, duration=3)
                     self.dlgLaser.lineEdit_dist.selectAll()
 
-    # Select le texte d'une QLineEdit
-    def make_select_text(self, lineedit):
-        # necessary to call a function with parameters
-        def select_text():
-            lineedit.selectAll()
-
-        return select_text
-
     # Compute the highest point attribute
     def max_Point(self):
 
-        features = self.layerPoint.getFeatures()
+        features = self.layers['Point'].getFeatures()
         attributs = []
 
         for feature in features:
             att = feature.attributes()
             attributs.append(int(att[0]))
-            # print("Feature attribut: ", att[0])
-
         try:
             self.pointmax = max(attributs)
         except Exception as e:
@@ -3232,77 +2561,11 @@ class APNCad:
             self.pointmax = 0
 
     def save_layers(self):
-        # layer.commitChanges(): quitte edition en sauvegardant
-        # layer.rollBack() : quitte edition sans sauvegarder
-
-        # active l'outil main
-        # self.canvas.setMapTool(self.toolPan)
-
-        # pyautogui.press('esc')
-
         # sauvegarde toutes les couches en mode edition
         for layer in self.iface.mapCanvas().layers():
             if layer.isEditable():
                 layer.commitChanges()
                 layer.startEditing()  # on remet la couche en mode edition
-
-    def select_nearest_feature(self, point, button):
-        self.layerData = []
-
-        for layer in self.canvas.layers():
-
-            if layer.type() != QgsMapLayer.VectorLayer:
-                # Ignore this layer as it's not a vector
-                continue
-
-            if layer.featureCount() == 0:
-                # There are no features - skip
-                continue
-
-            groupName = QgsProject.instance().layerTreeRoot().findLayer(layer.id()).parent().name()
-            # features you cannot select
-            if groupName == "Restit" or groupName == "CroqRem" or groupName == "Ancien_Plan" or groupName == "Ortho":
-                continue
-
-            layer.removeSelection()
-
-            # Determine the location of the click in real-world coords
-            # layerPoint = self.toLayerCoordinates( layer, mouseEvent.pos() )
-
-            shortestDistance = float("inf")
-            self.closestFeatureId = -1
-
-            # Loop through all features in the layer
-            for f in layer.getFeatures():
-                dist = f.geometry().distance(QgsGeometry.fromPointXY(QgsPointXY(point.x(), point.y())))
-                if shortestDistance > dist > 0:
-                    shortestDistance = dist
-                    self.closestFeatureId = f.id()
-
-            info = (layer, self.closestFeatureId, shortestDistance)
-            self.layerData.append(info)
-
-        if not len(self.layerData) > 0:
-            # Looks like no vector layers were found - do nothing
-            self.iface.messageBar().pushMessage("Aucun objet trouvé", level=Qgis.Critical, duration=3)
-            return False
-
-        # Sort the layer information by shortest distance
-        self.layerData.sort(key=lambda element: element[2])
-
-        if self.layerData[0][2] > 5:
-            # Looks like no close elements were found - do nothing
-            self.iface.messageBar().pushMessage("Aucun objet proche trouvé", level=Qgis.Critical, duration=3)
-            print(self.layerData[0][2])
-            return False
-
-        # Select the closest feature
-        layerWithClosestFeature, self.closestFeatureId, shortestDistance = self.layerData[0]
-        layerWithClosestFeature.select(self.closestFeatureId)
-        self.currentLayer = layerWithClosestFeature
-        print(self.closestFeatureId)
-
-        return True
 
     def find_nearest_features(self, point, button):
         self.layerData = []
@@ -3317,15 +2580,12 @@ class APNCad:
                 # There are no features - skip
                 continue
 
-            groupName = QgsProject.instance().layerTreeRoot().findLayer(layer.id()).parent().name()
+            # groupName = QgsProject.instance().layerTreeRoot().findLayer(layer.id()).parent().name()
             # features you cannot select
             # if groupName == "Restit" or groupName == "CroqRem" or groupName == "Ancien_Plan" or groupName == "Ortho":
             #     continue
 
             layer.removeSelection()
-
-            # Determine the location of the click in real-world coords
-            # layerPoint = self.toLayerCoordinates( layer, mouseEvent.pos() )
 
             shortestDistance = float("inf")
             self.closestFeatureId = -1
@@ -3375,7 +2635,6 @@ class APNCad:
             if not result:
                 return False
 
-
         else:
 
             layerWithClosestFeature, self.closestFeatureId, shortestDistance = self.layerData[0]
@@ -3400,7 +2659,7 @@ class APNCad:
 
         except Exception as e:
             print(e)
-            self.iface.messageBar().pushMessage("Aucun objet sélectionné", level=Qgis.Critical, duration=4)
+            self.iface.messageBar().pushMessage("Aucun objet sélectionné", level=Qgis.Warning, duration=4)
 
     # refresh canvas
     def refresh_layer(self, layer):
@@ -3416,7 +2675,7 @@ class APNCad:
 
         listPoint = []
         listFeatures = []
-        for feature in self.layerPoint.getFeatures():
+        for feature in self.layers['Point'].getFeatures():
             listPoint.append(feature.attributes()[0])
             listFeatures.append(feature.id())
         listPoint.sort(reverse=True)
@@ -3426,86 +2685,53 @@ class APNCad:
             self.dlgListe.listNumPoint.insertRow(i)
             self.dlgListe.listNumPoint.setCellWidget(i, 0, QLineEdit(str(listPoint[i])))
 
-    def make_resume_num(self, tool):
+    def resume_num(self, tool):
+        layer = None
+        dlg = None
+        if tool == "point":
+            layer = self.layers['Point']
+            dlg = self.dlgConfigPt
+        elif tool == "parcelle":
+            layer = self.layers['Numparc']
+            dlg = self.dlgNumParc
 
-        def resume_num():
-            layer = None
-            dlg = None
-            if tool == "point":
-                layer = self.layerPoint
-                dlg = self.dlgConfigPt
-            elif tool == "parcelle":
-                layer = self.layerParc
-                dlg = self.dlgNumParc
-
-            max_num = layer.maximumValue(0)
-            if max_num is not None:
-                dlg.lineedit_numin.clearValue()
-                dlg.lineedit_numin.setText(str(max_num + 1))
-
-        return resume_num
+        max_num = layer.maximumValue(0)
+        if max_num is not None:
+            dlg.lineedit_numin.clearValue()
+            dlg.lineedit_numin.setText(str(max_num + 1))
 
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
-        # for action in self.actions:
-        #     self.iface.removePluginMenu(
-        #         self.tr(u'&APNCad'),
-        #         action)
-        # self.iface.removeToolBarIcon(action)
 
         self.menu.deleteLater()
-        # self.menu_scr.deleteLater()
 
-        # self.iface.removeToolBarIcon(self.toolBtnAction)
-        self.toolbar.clear()
-        self.toolbar.deleteLater()
-        # parent = self.toolbar.parentWidget()
-        # parent.removeToolBar(self.toolbar)
+        self.generalToolbar.clear()
+        self.generalToolbar.deleteLater()
 
         self.pointToolbar.clear()
-        # parent = self.pointToolbar.parentWidget()
-        # parent.removeToolBar(self.pointToolbar)
         self.pointToolbar.deleteLater()
 
         self.enterToolbar.clear()
-        # parent2 = self.enterToolbar.parentWidget()
-        # parent2.removeToolBar(self.enterToolbar)
         self.enterToolbar.deleteLater()
 
         self.dessinToolbar.clear()
-        # parent3 = self.dessinToolbar.parentWidget()
-        # parent3.removeToolBar(self.dessinToolbar)
         self.dessinToolbar.deleteLater()
 
         self.symboleToolbar.clear()
-        # parent4 = self.symboleToolbar.parentWidget()
-        # parent4.removeToolBar(self.symboleToolbar)
         self.symboleToolbar.deleteLater()
 
         self.croquisToolbar.clear()
         self.croquisToolbar.deleteLater()
-        # self.iface.removeToolBarIcon(self.toolBtnAction)
-        # self.iface.removeToolBarIcon(self.coteButtonAction)
-        # self.iface.removeToolBarIcon(self.murButtonAction)
-        # self.iface.removeToolBarIcon(self.ligneButtonAction)
-        # self.iface.removeToolBarIcon(self.texteButtonAction)
-        # self.iface.removeToolBarIcon(self.murMitButtonAction)
-        # self.iface.removeToolBarIcon(self.borneButtonAction)
-        # self.iface.removeToolBarIcon(self.visuButtonAction)
-        # self.iface.removeToolBarIcon(self.coucheButtonAction)
 
-        self.canvas.unsetMapTool(self.modifTool)
-        self.canvas.unsetMapTool(self.clickTool)
-        # self.canvas.unsetMapTool(self.segmentTool)
+        self.canvas.unsetMapTool(self.editAttributeTool)
+        self.canvas.unsetMapTool(self.pointTool)
         self.canvas.unsetMapTool(self.deleteTool)
         self.canvas.unsetMapTool(self.arcTool)
         self.canvas.unsetMapTool(self.debordTool)
         self.canvas.unsetMapTool(self.identifyTool)
-        # self.canvas.unsetMapTool(self.translateTool)
         self.canvas.unsetMapTool(self.copyTool)
         self.canvas.unsetMapTool(self.freezeTool)
         self.canvas.unsetMapTool(self.polyligneTool)
         self.canvas.unsetMapTool(self.punctualTool)
         self.canvas.unsetMapTool(self.actionTool)
         self.canvas.unsetMapTool(self.numParcTool)
-
