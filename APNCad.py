@@ -2250,6 +2250,7 @@ class APNCad:
         self.currentLayer = self.layers['polygone']
         self.iface.setActiveLayer(self.currentLayer)
         self.currentLayer.startEditing()
+        self.attribute = True
         self.canvas.setMapTool(self.polygonTool)
         # self.iface.actionAddFeature().trigger()
 
