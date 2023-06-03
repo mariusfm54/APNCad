@@ -22,7 +22,7 @@
  ***************************************************************************/
 """
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QFileInfo, QObject, Qt, QVariant
-from qgis.PyQt.QtGui import QIcon, QCursor
+from qgis.PyQt.QtGui import QIcon, QCursor, QPixmap
 from qgis.PyQt.QtWidgets import QAction, QMessageBox, QDockWidget, QFileDialog
 from qgis.utils import iface
 from qgis.gui import QgsMapToolEmitPoint, QgsMapToolPan, QgsRubberBand
@@ -294,7 +294,12 @@ class APNCad:
         :rtype: QAction
         """
 
-        icon = QIcon(icon_path)
+        icon = QIcon()
+        pixmap = QPixmap(icon_path)
+        # Set the desired icon size
+        pixmap = pixmap.scaled(64, 64)
+        icon.addPixmap(pixmap)
+
         action = QAction(icon, text, parent)
         action.triggered.connect(callback)
         action.setEnabled(enabled_flag)
@@ -1307,7 +1312,7 @@ class APNCad:
 
         # Fenetre Camera (built here because QGIS cannot read QCameraViewfinder in ui)
         self.viewfinder = QCameraViewfinder()
-        self.viewfinder.setFixedSize(934, 685)
+        # self.viewfinder.setGeometry(934, 685)
         self.viewfinder.setWindowTitle("Appareil Photo")
         self.viewfinder.setWindowFlag(QtCore.Qt.WindowCloseButtonHint, False)
         # getting available cameras
@@ -2303,7 +2308,7 @@ class APNCad:
         self.save_path_image = QFileInfo(QgsProject.instance().fileName()).absolutePath()
         self.lineedit_photo_path.setText(self.save_path_image)
 
-        self.viewfinder.show()
+        self.viewfinder.showMaximized()
 
     def close_camera(self):
         self.camera.stop()
