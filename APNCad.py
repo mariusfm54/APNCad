@@ -127,7 +127,8 @@ class APNCad:
                            ("Numparc", "Point", "CroquisDelim"), ("GrandTexte", "Point", "CroquisDelim"),
                            ("Fiscalite", "Ligne", "CroquisDelim"), ("LimiteCommune", "Ligne", "CroquisDelim"),
                            ("LimiteSection", "Ligne", "CroquisDelim"), ("LimiteLieuDit", "Ligne", "CroquisDelim"),
-                           ("FiscaliteTexte", "Point", "CroquisDelim"), ("PetitText", "Point", "CroquisDelim")]
+                           ("FiscaliteTexte", "Point", "CroquisDelim"), ("PetitText", "Point", "CroquisDelim"),
+                           ("jourdelim", "Point", "Delimitation")]
 
         self.crsDict = {'RGF93 / CC43': 'EPSG:3943', 'RGF93 / CC44': 'EPSG:3944', 'RGF93 / CC45': 'EPSG:3945',
                         'RGF93 / CC46': 'EPSG:3946', 'RGF93 / CC47': 'EPSG:3947', 'RGF93 / CC48': 'EPSG:3948',
@@ -1407,6 +1408,7 @@ class APNCad:
         dessin = cad_dessin.addGroup("Dessin")
         autre = cad_dessin.addGroup("Autres")
         croquisDelim = cad_dessin.addGroup("CroquisDelim")
+        delimitation = cad_dessin.addGroup("Delimitation")
 
         croqrem = root.addGroup("CroqRem")  # group croqrem
         restit = root.addGroup("Restit")
@@ -1490,6 +1492,10 @@ class APNCad:
                 # ajout au groupe
                 croquisDelim.insertChildNode(0, QgsLayerTreeLayer(layer))
 
+            elif couche[2] == "Delimitation":
+                # ajout au groupe
+                delimitation.insertChildNode(0, QgsLayerTreeLayer(layer))
+
             # suppression de la couche initiale
             parent.removeChildNode(layerT)
 
@@ -1515,11 +1521,13 @@ class APNCad:
             dessin = cad_dessin.addGroup("Dessin")
             autre = cad_dessin.addGroup("Autres")
             croquisDelim = cad_dessin.addGroup("CroquisDelim")
+            delimitation = cad_dessin.addGroup("Delimitation")
         else:
             symbole = cad_dessin.findGroup("Symboles")
             dessin = cad_dessin.findGroup("Dessin")
             autre = cad_dessin.findGroup("Autres")
             croquisDelim = cad_dessin.findGroup("CroquisDelim")
+            delimitation = cad_dessin.findGroup("Delimitation")
 
         if symbole is None:
             symbole = cad_dessin.addGroup("Symboles")
@@ -1529,6 +1537,8 @@ class APNCad:
             autre = cad_dessin.addGroup("Autres")
         if croquisDelim is None:
             croquisDelim = cad_dessin.addGroup("CroquisDelim")
+        if delimitation is None:
+            delimitation = cad_dessin.addGroup("Delimitation")
 
         # nombre de couches ajoutees
         compteur = 0
@@ -1620,6 +1630,10 @@ class APNCad:
                         # ajout au groupe
                         croquisDelim.insertChildNode(0, QgsLayerTreeLayer(layer))
 
+                    elif couche[2] == "Delimitation":
+                        # ajout au groupe
+                        delimitation.insertChildNode(0, QgsLayerTreeLayer(layer))
+
                     # suppression de la couche initiale
                     parent.removeChildNode(layerT)
 
@@ -1658,6 +1672,10 @@ class APNCad:
                     elif couche[2] == "CroquisDelim":
                         # ajout au groupe
                         croquisDelim.insertChildNode(0, QgsLayerTreeLayer(layer))
+
+                    elif couche[2] == "Delimitation":
+                        # ajout au groupe
+                        delimitation.insertChildNode(0, QgsLayerTreeLayer(layer))
 
                     # suppression de la couche initiale
                     parent.removeChildNode(layerT)
