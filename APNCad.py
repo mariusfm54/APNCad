@@ -436,6 +436,16 @@ class APNCad:
             key_action="action_display_ortho",
             parent=self.iface.mainWindow())
 
+        # Bouton visu couche Ancien_Plan
+        icon_path = ':/APNCad/icon/icon71.png'
+        self.add_action(
+            icon_path,
+            text=self.tr('Afficher/cacher Ancien_Plan'),
+            toolbutton=self.visuButton,
+            callback=self.visu_ancien_plan,
+            key_action="action_display_ancien_plan",
+            parent=self.iface.mainWindow())
+
         # Bouton geler couche
         icon_path = ':/APNCad/icon/icon57.png'
         self.add_action(
@@ -2474,6 +2484,21 @@ class APNCad:
         else:
             group.setItemVisibilityChecked(True)
 
+    def visu_ancien_plan(self):
+        self.visuButton.setDefaultAction(self.actions["action_display_ancien_plan"])
+
+        # Get layer Text in group Ortho
+        root = QgsProject.instance().layerTreeRoot()
+        group = root.findGroup("Ancien_Plan")
+
+        if group is None:
+            return
+
+        if group.isVisible():
+            group.setItemVisibilityChecked(False)
+        else:
+            group.setItemVisibilityChecked(True)
+
     # Rechercher parcelle
     def rechercher_parc(self):
 
@@ -2604,10 +2629,10 @@ class APNCad:
                 # There are no features - skip
                 continue
 
-            # groupName = QgsProject.instance().layerTreeRoot().findLayer(layer.id()).parent().name()
+            groupName = QgsProject.instance().layerTreeRoot().findLayer(layer.id()).parent().name()
             # features you cannot select
-            # if groupName == "Restit" or groupName == "CroqRem" or groupName == "Ancien_Plan" or groupName == "Ortho":
-            #     continue
+            if groupName == "Restit" or groupName == "CroqRem" or groupName == "Ancien_Plan" or groupName == "Ortho":
+                continue
 
             layer.removeSelection()
 
