@@ -389,18 +389,7 @@
       <dd_properties>
         <Option type="Map">
           <Option name="name" type="QString" value=""/>
-          <Option name="properties" type="Map">
-            <Option name="PositionX" type="Map">
-              <Option name="active" type="bool" value="true"/>
-              <Option name="field" type="QString" value="auxiliary_storage_labeling_positionx"/>
-              <Option name="type" type="int" value="2"/>
-            </Option>
-            <Option name="PositionY" type="Map">
-              <Option name="active" type="bool" value="true"/>
-              <Option name="field" type="QString" value="auxiliary_storage_labeling_positiony"/>
-              <Option name="type" type="int" value="2"/>
-            </Option>
-          </Option>
+          <Option name="properties"/>
           <Option name="type" type="QString" value="collection"/>
         </Option>
       </dd_properties>
@@ -537,22 +526,8 @@
   <legend type="default-vector" showLabelLegend="0"/>
   <referencedLayers/>
   <fieldConfiguration>
-    <field name="id" configurationFlags="None">
+    <field name="ID">
       <editWidget type="TextEdit">
-        <config>
-          <Option/>
-        </config>
-      </editWidget>
-    </field>
-    <field name="auxiliary_storage_labeling_positionx" configurationFlags="None">
-      <editWidget type="Hidden">
-        <config>
-          <Option/>
-        </config>
-      </editWidget>
-    </field>
-    <field name="auxiliary_storage_labeling_positiony" configurationFlags="None">
-      <editWidget type="Hidden">
         <config>
           <Option/>
         </config>
@@ -560,24 +535,16 @@
     </field>
   </fieldConfiguration>
   <aliases>
-    <alias name="" field="id" index="0"/>
-    <alias name="" field="auxiliary_storage_labeling_positionx" index="1"/>
-    <alias name="" field="auxiliary_storage_labeling_positiony" index="2"/>
+    <alias name="" field="ID" index="0"/>
   </aliases>
   <defaults>
-    <default field="id" applyOnUpdate="0" expression=""/>
-    <default field="auxiliary_storage_labeling_positionx" applyOnUpdate="0" expression=""/>
-    <default field="auxiliary_storage_labeling_positiony" applyOnUpdate="0" expression=""/>
+    <default field="ID" applyOnUpdate="0" expression=""/>
   </defaults>
   <constraints>
-    <constraint unique_strength="0" field="id" constraints="0" exp_strength="0" notnull_strength="0"/>
-    <constraint unique_strength="0" field="auxiliary_storage_labeling_positionx" constraints="0" exp_strength="0" notnull_strength="0"/>
-    <constraint unique_strength="0" field="auxiliary_storage_labeling_positiony" constraints="0" exp_strength="0" notnull_strength="0"/>
+    <constraint unique_strength="0" field="ID" constraints="1" exp_strength="0" notnull_strength="0"/>
   </constraints>
   <constraintExpressions>
-    <constraint field="id" desc="" exp=""/>
-    <constraint field="auxiliary_storage_labeling_positionx" desc="" exp=""/>
-    <constraint field="auxiliary_storage_labeling_positiony" desc="" exp=""/>
+    <constraint field="ID" desc="" exp=""/>
   </constraintExpressions>
   <expressionfields/>
   <attributeactions>
@@ -585,10 +552,8 @@
   </attributeactions>
   <attributetableconfig sortOrder="0" sortExpression="" actionWidgetStyle="dropDown">
     <columns>
-      <column name="id" hidden="0" type="field" width="-1"/>
-      <column name="auxiliary_storage_labeling_positionx" hidden="1" type="field" width="-1"/>
-      <column name="auxiliary_storage_labeling_positiony" hidden="1" type="field" width="-1"/>
-      <column hidden="1" type="actions" width="-1"/>
+	  <column hidden="1" type="actions" width="-1"/>
+      <column name="ID" hidden="0" type="field" width="-1"/>
     </columns>
   </attributetableconfig>
   <conditionalstyles>
@@ -620,23 +585,14 @@ def my_form_open(dialog, layer, feature):
   <featformsuppress>0</featformsuppress>
   <editorlayout>generatedlayout</editorlayout>
   <editable>
-    <field name="auxiliary_storage_labeling_positionx" editable="0"/>
-    <field name="auxiliary_storage_labeling_positiony" editable="0"/>
-    <field name="id" editable="1"/>
+    <field name="ID" editable="1"/>
   </editable>
   <labelOnTop>
-    <field name="auxiliary_storage_labeling_positionx" labelOnTop="0"/>
-    <field name="auxiliary_storage_labeling_positiony" labelOnTop="0"/>
-    <field name="id" labelOnTop="0"/>
+	<field labelOnTop="0" name="ID"/>
   </labelOnTop>
-  <reuseLastValue>
-    <field name="auxiliary_storage_labeling_positionx" reuseLastValue="0"/>
-    <field name="auxiliary_storage_labeling_positiony" reuseLastValue="0"/>
-    <field name="id" reuseLastValue="0"/>
-  </reuseLastValue>
   <dataDefinedFieldProperties/>
   <widgets/>
-  <previewExpression>"id"</previewExpression>
+  <previewExpression>"ID"</previewExpression>
   <mapTip></mapTip>
   <layerGeometryType>0</layerGeometryType>
 </qgis>

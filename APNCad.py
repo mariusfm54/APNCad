@@ -437,13 +437,13 @@ class APNCad:
             parent=self.iface.mainWindow())
 
         # Bouton visu couche Ancien_Plan
-        icon_path = ':/APNCad/icon/icon71.png'
+        icon_path = ':/APNCad/icon/icon51.png'
         self.add_action(
             icon_path,
-            text=self.tr('Afficher/cacher Ancien_Plan'),
+            text=self.tr('Afficher/cacher Ortho'),
             toolbutton=self.visuButton,
-            callback=self.visu_ancien_plan,
-            key_action="action_display_ancien_plan",
+            callback=self.visu_Ortho,
+            key_action="action_display_ortho",
             parent=self.iface.mainWindow())
 
         # Bouton geler couche
@@ -1438,7 +1438,7 @@ class APNCad:
             layerFields = QgsFields()
 
             # type de l'ID (int pour Point uniquement)
-            if couche[0] == "Point":
+            if couche[0] == "Point" or couche[0] == "Numparc":
                 layerFields.append(QgsField('ID', QVariant.Int))
             # elif couche[0]=="image":
             #     layerFields.append(QgsField('ID', QVariant.Image))
@@ -1569,7 +1569,7 @@ class APNCad:
                     layerFields = QgsFields()
 
                     # type de l'ID (int pour Point uniquement)
-                    if couche[0] == "Point":
+                    if couche[0] == "Point" or couche[0] == "Numparc":
                         layerFields.append(QgsField('ID', QVariant.Int))
                     elif couche[0] == "Das":
                         layerFields.append(QgsField('ID', QVariant.String))
@@ -1764,11 +1764,16 @@ class APNCad:
     def display_point(self, point, button):
 
         feat = QgsFeature()
-        feat.setAttributes([self.numPoint])
         feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(point.x(), point.y())))
-        self.currentLayer.dataProvider().addFeatures([feat])  # ajout du point sur le dessin #ne permet pas ctrl z
-
+        feat.setAttributes([str(self.numPoint)])
+        res = self.currentLayer.dataProvider().addFeatures([feat])  # ajout du point sur le dessin #ne permet pas ctrl z
         self.currentLayer.commitChanges()
+
+        # ft_id = res[1][0].id()
+        # attrs = {0: str(self.numPoint)}
+        # self.currentLayer.dataProvider().changeAttributeValues({ft_id: attrs})
+        # # self.currentLayer.changeAttributeValue(ft.id(), index, newValue)
+        # self.refresh_layer(self.currentLayer)
 
         # autoriser annulation
         self.actions["action_cancel_point"].setEnabled(True)
@@ -2011,6 +2016,7 @@ class APNCad:
                     index = dlg.comboBox_field.currentIndex()
                     attrs = {index: newValue}
                     self.currentLayer.dataProvider().changeAttributeValues({ft.id(): attrs})
+                    # self.currentLayer.changeAttributeValue(ft.id(), index, newValue)
                     self.refresh_layer(self.currentLayer)
 
                 except Exception as e:
@@ -2475,21 +2481,6 @@ class APNCad:
         # Get layer Text in group Ortho
         root = QgsProject.instance().layerTreeRoot()
         group = root.findGroup("Ortho")
-
-        if group is None:
-            return
-
-        if group.isVisible():
-            group.setItemVisibilityChecked(False)
-        else:
-            group.setItemVisibilityChecked(True)
-
-    def visu_ancien_plan(self):
-        self.visuButton.setDefaultAction(self.actions["action_display_ancien_plan"])
-
-        # Get layer Text in group Ortho
-        root = QgsProject.instance().layerTreeRoot()
-        group = root.findGroup("Ancien_Plan")
 
         if group is None:
             return

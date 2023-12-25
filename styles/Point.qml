@@ -124,115 +124,9 @@
       <rendering fontMaxPixelSize="10000" displayAll="0" obstacleFactor="1" limitNumLabels="0" labelPerPart="0" fontMinPixelSize="3" obstacleType="0" mergeLines="0" obstacle="1" scaleMax="0" drawLabels="1" fontLimitPixelSize="1" scaleMin="0" upsidedownLabels="0" zIndex="0" minFeatureSize="0" scaleVisibility="1" maxNumLabels="2000"/>
       <dd_properties>
         <Option type="Map">
-          <Option type="QString" value="" name="name"/>
-          <Option type="Map" name="properties">
-            <Option type="Map" name="AlwaysShow">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_alwaysshow" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="Bold">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_bold" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="BufferColor">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_buffercolor" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="BufferSize">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_buffersize" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="Color">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_color" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="Family">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_family" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="FontStyle">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_fontstyle" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="Hali">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_hali" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="Italic">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_italic" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="LabelDistance">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_labeldistance" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="LabelRotation">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_labelrotation" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="MaximumScale">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_minscale" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="MinimumScale">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_maxscale" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="PositionX">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_positionx" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="PositionY">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_positiony" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="ScaleVisibility">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_scalevisibility" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="Show">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_show" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="Size">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_size" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="Strikeout">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_strikeout" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="Underline">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_underline" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-            <Option type="Map" name="Vali">
-              <Option type="bool" value="true" name="active"/>
-              <Option type="QString" value="auxiliary_storage_labeling_vali" name="field"/>
-              <Option type="int" value="2" name="type"/>
-            </Option>
-          </Option>
-          <Option type="QString" value="collection" name="type"/>
+          <Option value="" name="name" type="QString"/>
+          <Option name="properties"/>
+          <Option value="collection" name="type" type="QString"/>
         </Option>
       </dd_properties>
       <callout type="simple">
@@ -381,52 +275,9 @@ def my_form_open(dialog, layer, feature):
   <editorlayout>generatedlayout</editorlayout>
   <editable>
     <field name="ID" editable="1"/>
-    <field name="auxiliary_storage_labeling_alwaysshow" editable="0"/>
-    <field name="auxiliary_storage_labeling_bold" editable="0"/>
-    <field name="auxiliary_storage_labeling_buffercolor" editable="0"/>
-    <field name="auxiliary_storage_labeling_buffersize" editable="0"/>
-    <field name="auxiliary_storage_labeling_color" editable="0"/>
-    <field name="auxiliary_storage_labeling_family" editable="0"/>
-    <field name="auxiliary_storage_labeling_fontstyle" editable="0"/>
-    <field name="auxiliary_storage_labeling_hali" editable="0"/>
-    <field name="auxiliary_storage_labeling_italic" editable="0"/>
-    <field name="auxiliary_storage_labeling_labeldistance" editable="0"/>
-    <field name="auxiliary_storage_labeling_labelrotation" editable="0"/>
-    <field name="auxiliary_storage_labeling_maxscale" editable="0"/>
-    <field name="auxiliary_storage_labeling_minscale" editable="0"/>
-    <field name="auxiliary_storage_labeling_positionx" editable="0"/>
-    <field name="auxiliary_storage_labeling_positiony" editable="0"/>
-    <field name="auxiliary_storage_labeling_scalevisibility" editable="0"/>
-    <field name="auxiliary_storage_labeling_show" editable="0"/>
-    <field name="auxiliary_storage_labeling_size" editable="0"/>
-    <field name="auxiliary_storage_labeling_strikeout" editable="0"/>
-    <field name="auxiliary_storage_labeling_underline" editable="0"/>
-    <field name="auxiliary_storage_labeling_vali" editable="0"/>
-    <field name="id" editable="1"/>
   </editable>
   <labelOnTop>
     <field labelOnTop="0" name="ID"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_alwaysshow"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_bold"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_buffercolor"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_buffersize"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_color"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_family"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_fontstyle"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_hali"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_italic"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_labeldistance"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_labelrotation"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_maxscale"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_minscale"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_positionx"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_positiony"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_scalevisibility"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_show"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_size"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_strikeout"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_underline"/>
-    <field labelOnTop="0" name="auxiliary_storage_labeling_vali"/>
     <field labelOnTop="0" name="id"/>
   </labelOnTop>
   <dataDefinedFieldProperties/>
