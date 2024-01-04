@@ -9,7 +9,7 @@ from qgis.utils import iface
 
 # Create a map tool to draw the polyline
 class PolylineMapTool(QgsMapTool):
-    polylineFinished = pyqtSignal(list)
+    polylineFinished = pyqtSignal(QgsFeature)
 
     def __init__(self, canvas):
         super().__init__(canvas)
@@ -59,12 +59,13 @@ class PolylineMapTool(QgsMapTool):
 
     def finishPolyline(self):
         if len(self.points) > 1:
-            feat = QgsFeature()
+            feat = QgsFeature(iface.activeLayer().fields())
             feat.setGeometry(QgsGeometry.fromPolylineXY([QgsPointXY(p) for p in self.points]))
-            iface.activeLayer().dataProvider().addFeatures([feat])
-            self.canvas.refresh()
-            iface.activeLayer().triggerRepaint()
+            # iface.activeLayer().dataProvider().addFeatures([feat])
+            # self.canvas.refresh()
+            # iface.activeLayer().triggerRepaint()
             self.rb.reset(QgsWkbTypes.LineGeometry)
-            self.polylineFinished.emit(self.points)
+            # self.polylineFinished.emit(self.points)
+            self.polylineFinished.emit(feat)
         self.points = []
         self.rb.reset(QgsWkbTypes.LineGeometry)

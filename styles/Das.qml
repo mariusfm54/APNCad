@@ -227,7 +227,7 @@
   <excludeAttributesWFS/>
   <defaults>
     <default field="ID" applyOnUpdate="0" expression="'Da n°'"/>
-    <default field="Fichier" applyOnUpdate="1" expression="&quot;Da n°&quot;"/>
+    <default field="Fichier" applyOnUpdate="0" expression=""/>
   </defaults>
   <constraints>
     <constraint unique_strength="0" notnull_strength="0" field="ID" constraints="0" exp_strength="0"/>

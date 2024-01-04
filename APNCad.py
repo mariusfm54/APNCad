@@ -37,25 +37,20 @@ from PyQt5.QtMultimediaWidgets import *
 from PyQt5.QtCore import QUrl
 from PyQt5.QtGui import QDesktopServices, QMouseEvent, QKeyEvent
 from qgis.core import (QgsCoordinateReferenceSystem,
-                       QgsCoordinateTransform,
                        QgsProject,
-                       QgsRectangle,
                        QgsPointXY,
                        QgsGeometry,
-                       QgsVectorLayer,
                        QgsFeature,
                        Qgis,
-                       QgsMapLayerType,
                        QgsPoint,
                        QgsMapLayer,
                        QgsCircularString,
-                       QgsLayerDefinition,
                        QgsWkbTypes,
                        QgsFields,
                        QgsField,
                        QgsVectorFileWriter,
                        QgsLayerTreeLayer,
-                       QgsCoordinateTransformContext)
+                       edit)
 
 # Initialize Qt resources from file resources.py
 from .resources import *
@@ -146,6 +141,9 @@ class APNCad:
         self.numParc = 1
         self.incParc = 1
 
+        # Plus proche feature
+        self.closestFeatureId = None
+
         # Parametres polyligne
         # attribut sur le segment
         self.attribute = True
@@ -215,12 +213,12 @@ class APNCad:
 
         # tracer polyligne
         self.polyligneTool = PolylineMapTool(self.canvas)
-        self.polyligneTool.polylineFinished.connect(self.apply_new_attribute)
+        self.polyligneTool.polylineFinished.connect(self.display_feature)
         # self.polyligneTool.snapClicked.connect(self.add_point)
 
         # tracer polygon
         self.polygonTool = PolygonMapTool(self.canvas)
-        self.polygonTool.polygonFinished.connect(self.apply_new_attribute)
+        self.polygonTool.polygonFinished.connect(self.display_feature)
 
         # tracer entite ponctuelle (1 pt)
         self.punctualTool = PointMapTool(self.canvas)
@@ -427,16 +425,6 @@ class APNCad:
         self.visuButton.setDefaultAction(self.actions["action_display_croqrem"])  # action par default du bouton
 
         # Bouton visu couche ortho
-        icon_path = ':/APNCad/icon/icon51.png'
-        self.add_action(
-            icon_path,
-            text=self.tr('Afficher/cacher Ortho'),
-            toolbutton=self.visuButton,
-            callback=self.visu_Ortho,
-            key_action="action_display_ortho",
-            parent=self.iface.mainWindow())
-
-        # Bouton visu couche Ancien_Plan
         icon_path = ':/APNCad/icon/icon51.png'
         self.add_action(
             icon_path,
@@ -699,7 +687,7 @@ class APNCad:
             icon_path,
             text=self.tr('Mur à droite'),
             toolbutton=self.murButton,
-            callback=lambda: self.set_general_tool("MurDroite", self.murButton,  "action_mur_droite", True, 100),
+            callback=lambda: self.set_general_tool("MurDroite", self.murButton, "action_mur_droite", True, 100),
             key_action="action_mur_droite",
             parent=self.iface.mainWindow())
 
@@ -1763,17 +1751,14 @@ class APNCad:
 
     def display_point(self, point, button):
 
+        self.currentLayer.beginEditCommand("Ajout point")
+
         feat = QgsFeature()
         feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(point.x(), point.y())))
-        feat.setAttributes([str(self.numPoint)])
-        res = self.currentLayer.dataProvider().addFeatures([feat])  # ajout du point sur le dessin #ne permet pas ctrl z
-        self.currentLayer.commitChanges()
+        feat.setAttributes([self.numPoint])
+        self.currentLayer.addFeature(feat)
 
-        # ft_id = res[1][0].id()
-        # attrs = {0: str(self.numPoint)}
-        # self.currentLayer.dataProvider().changeAttributeValues({ft_id: attrs})
-        # # self.currentLayer.changeAttributeValue(ft.id(), index, newValue)
-        # self.refresh_layer(self.currentLayer)
+        self.currentLayer.endEditCommand()
 
         # autoriser annulation
         self.actions["action_cancel_point"].setEnabled(True)
@@ -1819,21 +1804,22 @@ class APNCad:
     def open_attribute_table(self):
         self.iface.showAttributeTable(self.layers['Point'])
 
-    # erase last displayed point
+    # remove last point and update num point
     def cancel(self):
 
-        lastFeatureId = -1
+        # lastFeatureId = -1
+        # for f in self.layers['Point'].getFeatures():
+        #     if f.id() > lastFeatureId:
+        #         lastFeatureId = f.id()
 
-        # Loop through all features in the layer
-        for f in self.layers['Point'].getFeatures():
-            if f.id() > lastFeatureId:
-                lastFeatureId = f.id()
-
-        if lastFeatureId >= 0:
-            self.layers['Point'].dataProvider().deleteFeatures([lastFeatureId])
+        # Loop through all features in the layer and get id
+        # list_id = [i.id() for i in list(self.layers['Point'].getFeatures())]
+        if not self.layers['Point'].undoStack().isClean():
+            self.layers['Point'].undoStack().undo()
             self.refresh_layer(self.layers['Point'])
             self.numPoint = self.numPoint - self.increment
             self.lastPoint.setText(str(self.numPoint))
+            # self.layers['Point'].commitChanges()
 
         # aucun point dans la couche
         else:
@@ -1848,12 +1834,14 @@ class APNCad:
 
     def display_numParc(self, point, button):
 
-        feat = QgsFeature()
-        feat.setAttributes([self.numParc])
-        feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(point.x(), point.y())))
-        self.currentLayer.dataProvider().addFeatures([feat])  # ajout du numParc sur le dessin #ne permet pas ctrl z
+        self.currentLayer.beginEditCommand("Ajout numero parcelle")
 
-        self.currentLayer.commitChanges()
+        feat = QgsFeature()
+        feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(point.x(), point.y())))
+        feat.setAttributes([self.numParc])
+        self.currentLayer.addFeature(feat)
+
+        self.currentLayer.endEditCommand()
 
         # autoriser annulation
         self.actions["action_cancel_numparc"].setEnabled(True)
@@ -1895,19 +1883,15 @@ class APNCad:
 
     # erase last displayed point
     def cancel_numParc(self):
-
-        lastFeatureId = -1
-
         # Loop through all features in the layer
-        for f in self.layers['Numparc'].getFeatures():
-            if f.id() > lastFeatureId:
-                lastFeatureId = f.id()
+        # list_id = [i.id() for i in list(self.layers['Numparc'].getFeatures())]
 
-        if lastFeatureId >= 0:
-            self.layers['Numparc'].dataProvider().deleteFeatures([lastFeatureId])
+        if not self.layers['Numparc'].undoStack().isClean():
+            self.layers['Numparc'].undoStack().undo()
             self.refresh_layer(self.layers['Numparc'])
             self.numParc = self.numParc - self.incParc
             self.lastNumParc.setText(str(self.numParc))
+            # self.layers['Numparc'].commitChanges()
 
         # aucun numParc dans la couche
         else:
@@ -1933,14 +1917,17 @@ class APNCad:
 
     def display_punctual(self, point, button):
 
-        feat = QgsFeature()
+        self.currentLayer.beginEditCommand("Ajout entite ponctuelle")
+
+        feat = QgsFeature(self.currentLayer.fields())
         feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(point.x(), point.y())))
-        self.currentLayer.dataProvider().addFeatures([feat])  # ajout du point sur le dessin, ne permet pas ctrl z
+        self.currentLayer.addFeature(feat)  # ajout du point sur le dessin, ne permet pas ctrl z
         self.refresh_layer(self.currentLayer)
-        self.currentLayer.commitChanges()
 
         if self.attribute:
-            self.apply_new_attribute()
+            self.apply_new_attribute(feat)
+
+        self.currentLayer.endEditCommand()
 
     def set_coteCourbe_tool(self):
         self.currentLayer = self.layers['coteSURLigne']
@@ -1961,6 +1948,8 @@ class APNCad:
         # 3e point
         else:
 
+            self.currentLayer.beginEditCommand("Ajout cote courbe")
+
             # Create a QgsCircularString
             circularRing = QgsCircularString()
             # Set first point, intermediate point for curvature and end point
@@ -1974,24 +1963,37 @@ class APNCad:
             geom_from_curve = QgsGeometry(circularRing)
 
             # Create a feature
-            fet = QgsFeature()
+            fet = QgsFeature(self.currentLayer.fields())
             # Assign the geometry
             fet.setGeometry(geom_from_curve)
 
-            self.currentLayer.dataProvider().addFeatures([fet])
+            self.currentLayer.addFeature(fet)
+            self.currentLayer.endEditCommand()
+
             self.refresh_layer(self.currentLayer)
             self.pointList = []
-            self.currentLayer.commitChanges()
 
-            self.apply_new_attribute()
+            self.apply_new_attribute(fet)
 
-    def apply_new_attribute(self):
+    def display_feature(self, feature):
+        self.currentLayer.beginEditCommand("Ajout entite")
+        print(feature)
+        print(feature.geometry().type())
+        self.currentLayer.addFeature(feature)
+        # res = self.currentLayer.dataProvider().addFeatures([feature])
+        self.currentLayer.endEditCommand()
+        self.refresh_layer(self.currentLayer)
+        self.apply_new_attribute(feature)
+
+    def apply_new_attribute(self, ft):
 
         if self.attribute:
             # get last feature
             # other option: feature = list(feature_iterator)[N - 1] to get Nth feature
-            for feature in self.currentLayer.getFeatures():
-                ft = feature
+            # for feature in self.currentLayer.getFeatures():
+            #     ft = feature
+
+            # ft = list(self.currentLayer.getFeatures())[-1]
 
             # Special editing window for some layers (image)
             if self.currentLayer == self.layers['image'] or self.currentLayer == self.layers['Das']:
@@ -2014,16 +2016,18 @@ class APNCad:
                     print(newValue)
 
                     index = dlg.comboBox_field.currentIndex()
-                    attrs = {index: newValue}
-                    self.currentLayer.dataProvider().changeAttributeValues({ft.id(): attrs})
-                    # self.currentLayer.changeAttributeValue(ft.id(), index, newValue)
+                    # attrs = {index: newValue}
+                    # self.currentLayer.dataProvider().changeAttributeValues({ft.id(): attrs})
+                    self.currentLayer.beginEditCommand("Ajout attribut")
+                    self.currentLayer.changeAttributeValue(ft.id(), index, newValue)
+                    self.currentLayer.endEditCommand()
                     self.refresh_layer(self.currentLayer)
 
                 except Exception as e:
                     print(e)
                     pass
             else:
-                self.currentLayer.dataProvider().deleteFeatures([ft.id()])
+                self.currentLayer.deleteFeature(ft.id())
                 self.refresh_layer(self.currentLayer)
 
             dlg.lineedit_attribut.clearValue()
@@ -2076,12 +2080,14 @@ class APNCad:
 
     def delete_object(self, point, button):
         # self.dlgModif.reject() #ferme la fenetre
-        self.save_layers()
+        # self.save_layers()
 
         obj = self.find_nearest_features(point, button)
 
         if obj:
-            self.currentLayer.dataProvider().deleteFeatures([self.closestFeatureId])
+            self.currentLayer.beginEditCommand("Suppression entite")
+            self.currentLayer.deleteFeature(self.closestFeatureId)
+            self.currentLayer.endEditCommand()
             self.currentLayer.removeSelection()
             self.refresh_layer(self.currentLayer)
 
@@ -2092,7 +2098,7 @@ class APNCad:
         self.canvas.setCursor(QCursor(Qt.PointingHandCursor))
 
     def edit_attribute(self, point, button):
-        self.save_layers()
+        # self.save_layers()
 
         obj = self.find_nearest_features(point, button)
         if obj:
@@ -2102,7 +2108,8 @@ class APNCad:
                 self.dlgInfo.show()
                 self.dlgInfo.textEdit.setFocus()
                 try:
-                    old_attr = self.currentLayer.selectedFeatures()[0].attributes()[0]
+                    old_attr = self.currentLayer.getFeature(self.closestFeatureId).attributes()[0]
+                    # old_attr = self.currentLayer.selectedFeatures()[0].attributes()[0]
                     self.dlgInfo.textEdit.setText(str(old_attr))
                 except Exception as e:
                     print(e)
@@ -2113,8 +2120,11 @@ class APNCad:
                 if result:
                     try:
                         newValue = self.dlgInfo.textEdit.toPlainText()
-                        attrs = {0: newValue}
-                        self.currentLayer.dataProvider().changeAttributeValues({self.closestFeatureId: attrs})
+                        # attrs = {0: newValue}
+                        # self.currentLayer.dataProvider().changeAttributeValues({self.closestFeatureId: attrs})
+                        self.currentLayer.beginEditCommand("Changement attribut")
+                        self.currentLayer.changeAttributeValue(self.closestFeatureId, 0, newValue)
+                        self.currentLayer.endEditCommand()
                         self.refresh_layer(self.currentLayer)
                     except Exception as e:
                         print(e)
@@ -2128,7 +2138,8 @@ class APNCad:
                 self.dlgImage.lineedit_attribut.setFocus()
                 self.dlgImage.comboBox_field.addItems([field.name() for field in self.currentLayer.fields()])
                 try:
-                    old_attr = self.currentLayer.selectedFeatures()[0].attributes()[0]
+                    old_attr = self.currentLayer.getFeature(self.closestFeatureId).attributes()[0]
+                    # old_attr = self.currentLayer.selectedFeatures()[0].attributes()[0]
                     self.dlgImage.lineedit_attribut.setText(str(old_attr))
                 except Exception as e:
                     print(e)
@@ -2139,9 +2150,13 @@ class APNCad:
                 if result:
                     try:
                         index = self.dlgImage.comboBox_field.currentIndex()
+                        print(index)
                         newValue = self.dlgImage.lineedit_attribut.value()
-                        attrs = {index: newValue}
-                        self.currentLayer.dataProvider().changeAttributeValues({self.closestFeatureId: attrs})
+                        # attrs = {index: newValue}
+                        # self.currentLayer.dataProvider().changeAttributeValues({self.closestFeatureId: attrs})
+                        self.currentLayer.beginEditCommand("Changement attribut")
+                        self.currentLayer.changeAttributeValue(self.closestFeatureId, index, newValue)
+                        self.currentLayer.endEditCommand()
                         self.refresh_layer(self.currentLayer)
                     except Exception as e:
                         print(e)
@@ -2160,7 +2175,8 @@ class APNCad:
                 self.dlgAttribut.comboBox_field.addItems([field.name() for field in self.currentLayer.fields()])
 
                 try:
-                    old_attr = self.currentLayer.selectedFeatures()[0].attributes()[0]
+                    old_attr = self.currentLayer.getFeature(self.closestFeatureId).attributes()[0]
+                    # old_attr = self.currentLayer.selectedFeatures()[0].attributes()[0]
                     if old_attr != "NULL":
                         self.dlgAttribut.lineedit_attribut.setText(str(old_attr))
                 except Exception as e:
@@ -2177,8 +2193,11 @@ class APNCad:
                         if typeName == "Integer64" or typeName == "Integer":
                             newValue = int(newValue)
 
-                        attrs = {index: newValue}
-                        self.currentLayer.dataProvider().changeAttributeValues({self.closestFeatureId: attrs})
+                        # attrs = {index: newValue}
+                        # self.currentLayer.dataProvider().changeAttributeValues({self.closestFeatureId: attrs})
+                        self.currentLayer.beginEditCommand("Changement attribut")
+                        self.currentLayer.changeAttributeValue(self.closestFeatureId, index, newValue)
+                        self.currentLayer.endEditCommand()
                         self.refresh_layer(self.currentLayer)
                     except Exception as e:
                         print(e)
@@ -2196,14 +2215,14 @@ class APNCad:
         self.canvas.setCursor(QCursor(Qt.PointingHandCursor))
 
     def trigger_action(self, point, button):
-        self.save_layers()
+        # self.save_layers()
 
         obj = self.find_nearest_features(point, button)
         if obj:
             actionManager = self.currentLayer.actions()
             actions = actionManager.actions()
             if len(actions) > 0:
-                actionManager.doActionFeature(actions[0].id(), self.currentLayer.selectedFeatures()[0])
+                actionManager.doActionFeature(actions[0].id(), self.currentLayer.getFeature(self.closestFeatureId))
             else:
                 self.iface.messageBar().pushMessage("Cette couche ne possède pas d'action associée",
                                                     level=Qgis.Info, duration=4)
@@ -2212,13 +2231,13 @@ class APNCad:
     def set_translation_tool(self):
         self.copy = False
         self.canvas.setMapTool(self.copyTool)
-        self.save_layers()
+        # self.save_layers()
         self.translationButton.setDefaultAction(self.actions["action_move"])
 
     def set_copy_tool(self):
         self.copy = True
         self.canvas.setMapTool(self.copyTool)
-        self.save_layers()
+        # self.save_layers()
         self.translationButton.setDefaultAction(self.actions["action_copy"])
 
     def translate_copy_feature(self, point, button):
@@ -2228,28 +2247,38 @@ class APNCad:
 
             obj = self.find_nearest_features(point, button)
             if obj:
+                if not self.currentLayer.isEditable():
+                    self.currentLayer.startEditing()
+
                 pt = QgsPoint(point.x(), point.y())
                 self.pointList.append(pt)
                 print(self.currentLayer.name())
                 # si on veut copier et translater
                 if self.copy:
+                    self.currentLayer.beginEditCommand("Copie entite")
                     ft = self.currentLayer.getFeature(self.closestFeatureId)
-                    self.currentLayer.dataProvider().addFeatures([ft])
+                    self.currentLayer.addFeature(ft)
+                    self.currentLayer.endEditCommand()
 
         # 2e point
         else:
 
-            feat = self.currentLayer.getFeature(self.closestFeatureId)
+            self.currentLayer.beginEditCommand("Translate entite")
 
-            geom = feat.geometry()
             dx = point.x() - self.pointList[0].x()
             dy = point.y() - self.pointList[0].y()
-            geom.translate(dx, dy)
-            self.currentLayer.dataProvider().changeGeometryValues({feat.id(): geom})
+            self.currentLayer.translateFeature(self.closestFeatureId, dx, dy)
+
+            # geom = feat.geometry()
+            # geom.translate(dx, dy)
+            # # self.currentLayer.dataProvider().changeGeometryValues({feat.id(): geom})
+            # self.currentLayer.changeGeometry(feat.id(), geom)
+
             self.refresh_layer(self.currentLayer)
             self.pointList = []
-            self.currentLayer.commitChanges()
+            # self.currentLayer.commitChanges()
             self.currentLayer.removeSelection()
+            self.currentLayer.endEditCommand()
 
     def set_debord_tool(self):
         self.currentLayer = self.layers['debordT']
@@ -2277,12 +2306,14 @@ class APNCad:
 
     def display_debord(self, point, button):
 
-        feat = QgsFeature()
-        feat.setAttributes([self.debord])
+        self.currentLayer.beginEditCommand("Ajout debord")
+        feat = QgsFeature(self.currentLayer.fields())
         feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(point.x(), point.y())))
-        self.currentLayer.dataProvider().addFeatures([feat])  # ajout du point sur le dessin #ne permet pas ctrl z
+        feat.setAttributes([self.debord])
+        self.currentLayer.addFeature(feat)
 
-        self.currentLayer.commitChanges()
+        self.currentLayer.endEditCommand()
+
         self.refresh_layer(self.currentLayer)
 
     def set_polygone_tool(self):
@@ -2324,9 +2355,9 @@ class APNCad:
 
     def select_attribute_field(self, lineedit, combobox):
         index = combobox.currentIndex()
-        feat = self.currentLayer.selectedFeatures()
-        if len(feat) > 0:
-            attributes = feat[0].attributes()
+        if self.closestFeatureId is not None:
+            feat = self.currentLayer.getFeature(self.closestFeatureId)
+            attributes = feat.attributes()
             old_attr = attributes[index]
             lineedit.setText(str(old_attr))
 
@@ -2428,7 +2459,7 @@ class APNCad:
 
     def identify_layer(self, point, button):
 
-        self.save_layers()
+        # self.save_layers()
 
         obj = self.find_nearest_features(point, button)
 
@@ -2440,7 +2471,7 @@ class APNCad:
         self.canvas.setCursor(QCursor(Qt.PointingHandCursor))
 
     def freeze_layer(self, point, button):
-        self.save_layers()
+        # self.save_layers()
         obj = self.find_nearest_features(point, button)
         if obj:
             QgsProject.instance().layerTreeRoot().findLayer(self.currentLayer.id()).setItemVisibilityChecked(False)
@@ -2467,6 +2498,9 @@ class APNCad:
                 couche = tree_layer
                 break
         if couche is None:
+            iface.messageBar().pushMessage(
+                "Impossible de démarrer l'outil : le groupe 'CroqRem' ne contient pas de couche 'Textes'.",
+                level=Qgis.Critical, duration=5)
             return
 
         if couche.isVisible():
@@ -2483,6 +2517,9 @@ class APNCad:
         group = root.findGroup("Ortho")
 
         if group is None:
+            iface.messageBar().pushMessage(
+                "Impossible de démarrer l'outil : le groupe 'Ortho' est introuvable.",
+                level=Qgis.Critical, duration=5)
             return
 
         if group.isVisible():
@@ -2504,6 +2541,10 @@ class APNCad:
                 break
 
         if layer is None:
+            iface.messageBar().pushMessage(
+                "Impossible de démarrer l'outil : le groupe 'Ancien_Plan' ne contient pas de couche 'Polygones'.",
+                level=Qgis.Critical, duration=5)
+
             return
 
         self.iface.setActiveLayer(layer)
@@ -2601,14 +2642,19 @@ class APNCad:
             self.pointmax = 0
 
     def save_layers(self):
+        # Stack is cleaned, no undo possible
+        self.actions["action_cancel_point"].setEnabled(False)
+        self.actions["action_cancel_numparc"].setEnabled(False)
+
         # sauvegarde toutes les couches en mode edition
         for layer in self.iface.mapCanvas().layers():
             if layer.isEditable():
-                layer.commitChanges()
-                layer.startEditing()  # on remet la couche en mode edition
+                layer.commitChanges(False)
+                # layer.startEditing()  # on remet la couche en mode edition
 
     def find_nearest_features(self, point, button):
         self.layerData = []
+        self.closestFeatureId = None
 
         for layer in self.canvas.layers():
 
@@ -2625,10 +2671,7 @@ class APNCad:
             if groupName == "Restit" or groupName == "CroqRem" or groupName == "Ancien_Plan" or groupName == "Ortho":
                 continue
 
-            layer.removeSelection()
-
-            shortestDistance = float("inf")
-            self.closestFeatureId = -1
+            # layer.removeSelection()
 
             # Loop through all features in the layer
             for f in layer.getFeatures():
@@ -2678,7 +2721,7 @@ class APNCad:
         else:
 
             layerWithClosestFeature, self.closestFeatureId, shortestDistance = self.layerData[0]
-            layerWithClosestFeature.select(self.closestFeatureId)
+            # layerWithClosestFeature.select(self.closestFeatureId)
             self.currentLayer = layerWithClosestFeature
 
         return True
@@ -2693,7 +2736,7 @@ class APNCad:
             self.closestFeatureId = int(self.dlgNear.tableWidget_closest.cellWidget(ligne, 0).text())
             layerName = self.dlgNear.tableWidget_closest.cellWidget(ligne, 1).text()
             self.currentLayer = QgsProject.instance().mapLayersByName(layerName)[0]
-            self.currentLayer.select(self.closestFeatureId)
+            # self.currentLayer.select(self.closestFeatureId)
 
             self.dlgNear.accept()
 
@@ -2736,9 +2779,13 @@ class APNCad:
             dlg = self.dlgNumParc
 
         max_num = layer.maximumValue(0)
-        if max_num is not None:
+        print(type(max_num))
+        if type(max_num) == int:
             dlg.lineedit_numin.clearValue()
             dlg.lineedit_numin.setText(str(max_num + 1))
+        else:
+            dlg.lineedit_numin.clearValue()
+            dlg.lineedit_numin.setText("0")
 
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
