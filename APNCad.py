@@ -1995,6 +1995,10 @@ class APNCad:
 
             # ft = list(self.currentLayer.getFeatures())[-1]
 
+            # Important car dlg.comboBox_field.addItems genere signal index_changed et appelle ma fonction
+            # select_attribute_field qui ne doit etre appelee que pour edit un feat et pas pour creation
+            self.closestFeatureId = None
+
             # Special editing window for some layers (image)
             if self.currentLayer == self.layers['image'] or self.currentLayer == self.layers['Das']:
                 dlg = self.dlgImage
@@ -2004,6 +2008,7 @@ class APNCad:
                 dlg = self.dlgAttribut
 
             # fenetre entrer cote
+
             dlg.show()
             dlg.lineedit_attribut.setFocus()
             dlg.comboBox_field.addItems([field.name() for field in self.currentLayer.fields()])
