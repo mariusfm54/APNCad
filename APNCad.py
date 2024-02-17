@@ -21,19 +21,18 @@
  *                                                                         *
  ***************************************************************************/
 """
-from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QFileInfo, QObject, Qt, QVariant
+from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QFileInfo, Qt, QVariant
 from qgis.PyQt.QtGui import QIcon, QCursor, QPixmap
-from qgis.PyQt.QtWidgets import QAction, QMessageBox, QDockWidget, QFileDialog
+from qgis.PyQt.QtWidgets import QDockWidget, QFileDialog
 from qgis.utils import iface
-from qgis.gui import QgsMapToolEmitPoint, QgsMapToolPan, QgsRubberBand
+from qgis.gui import QgsMapToolEmitPoint, QgsMapToolPan
 from .PointMapTool import PointMapTool
 from .PolyLineMapTool import PolylineMapTool
 from .PolygonMapTool import PolygonMapTool
 
 # import requests
-from PyQt5.QtWidgets import QAction, QToolButton, QMenu, QLineEdit, QPushButton, QComboBox, QToolBar
-from PyQt5.QtMultimedia import *
-from PyQt5.QtMultimediaWidgets import *
+from PyQt5.QtWidgets import QAction, QToolButton, QMenu, QLineEdit, QPushButton, QToolBar, QWidget
+from PyQt5.QtMultimedia import QCameraInfo, QCamera, QCameraImageCapture
 from PyQt5.QtCore import QUrl
 from PyQt5.QtGui import QDesktopServices, QMouseEvent, QKeyEvent
 from qgis.core import (QgsCoordinateReferenceSystem,
@@ -49,8 +48,7 @@ from qgis.core import (QgsCoordinateReferenceSystem,
                        QgsFields,
                        QgsField,
                        QgsVectorFileWriter,
-                       QgsLayerTreeLayer,
-                       edit)
+                       QgsLayerTreeLayer)
 
 # Initialize Qt resources from file resources.py
 from .resources import *
@@ -66,6 +64,7 @@ from .RechercheParc_dialog import RechercheParcDialog
 from .SelectFeat_dialog import SelectFeatDialog
 from .EditerInfo_dialog import EditerInfoDialog
 from .EditerImage_dialog import EditerImageDialog
+from .Camera_dialog import CameraDialog
 
 import os.path
 from os import listdir
@@ -1310,15 +1309,34 @@ class APNCad:
         self.dlgCrs.pushButton_saveAs.clicked.connect(self.save_project)
 
         # Fenetre Camera (built here because QGIS cannot read QCameraViewfinder in ui)
+        u"""
+        self.camera_widget = QWidget()
+        self.camera_widget.setWindowFlag(QtCore.Qt.WindowCloseButtonHint, False)
         self.viewfinder = QCameraViewfinder()
         # self.viewfinder.setGeometry(934, 685)
         self.viewfinder.setWindowTitle("Appareil Photo")
-        self.viewfinder.setWindowFlag(QtCore.Qt.WindowCloseButtonHint, False)
+        # self.viewfinder.setWindowFlag(QtCore.Qt.WindowCloseButtonHint, False)
         # getting available cameras
         self.available_cameras = QCameraInfo.availableCameras()
 
-        self.camera_toolbar = QToolBar("Camera Tool Bar", self.viewfinder)
-        self.button_photo = QPushButton("Prendre photo")
+        self.camera_toolbar = QToolBar("Camera Tool Bar")
+        self.toolbar_layout = QHBoxLayout()
+        self.toolbar_layout.addWidget(self.camera_toolbar)
+        self.toolbar_layout.addStretch()
+
+        self.button_photo = QPushButton()
+        self.button_photo.setStyleSheet(\"\"\"
+                    QPushButton {
+                        background-color: red;
+                        border-radius: 60px;
+                        border: 3px solid white;
+                    }
+                    QPushButton:hover {
+                        background-color: #ff6666; /* lighter shade of red */
+                    }
+                \"\"\")
+        self.button_photo.setFixedSize(120, 120)
+
         self.button_photo_browse = QPushButton("Parcourir...")
         self.lineedit_photo_path = QLineEdit("")
         self.lineedit_photo_path.setFixedWidth(350)
@@ -1328,7 +1346,7 @@ class APNCad:
         self.camera_selector.addItems([camera.description() for camera in self.available_cameras])
 
         self.button_close_cam = QPushButton("Quitter")
-        self.camera_toolbar.addWidget(self.button_photo)
+        # self.camera_toolbar.addWidget(self.button_photo)
         self.camera_toolbar.addWidget(self.button_photo_browse)
         self.camera_toolbar.addWidget(self.lineedit_photo_path)
         self.camera_toolbar.addWidget(self.camera_selector)
@@ -1338,6 +1356,30 @@ class APNCad:
         self.button_photo_browse.clicked.connect(lambda: self.browse_folder(self.lineedit_photo_path))
         self.camera_selector.currentIndexChanged.connect(self.select_camera)
         self.button_close_cam.clicked.connect(self.close_camera)
+
+        layout = QGridLayout()
+        layout.addWidget(self.viewfinder, 0, 0, -1, -1)  # Adding the viewfinder to the top-left corner, spanning the entire grid
+        layout.addLayout(self.toolbar_layout, 0, 0, 1, 1, alignment=Qt.AlignRight | Qt.AlignTop)
+        layout.addWidget(self.button_photo, 1, 1, 1, 1)  # Adding the button to the top-left corner, spanning the entire grid
+
+        layout.setAlignment(self.button_photo, QtCore.Qt.AlignVCenter)
+        layout.setContentsMargins(0, 0, 50, 0)  # Removes margins for precise positioning
+
+        self.camera_widget.setLayout(layout)"""
+
+        self.dlgCamera = CameraDialog()
+        # self.dlgCamera.setFixedSize(1680, 1050)
+        self.dlgCamera.setWindowFlag(QtCore.Qt.WindowCloseButtonHint, False)
+        self.available_cameras = QCameraInfo.availableCameras()
+
+        # adding items to the combo box
+        self.dlgCamera.comboBox_camera_selector.addItems([camera.description() for camera in self.available_cameras])
+
+        self.dlgCamera.pushButton_capture.clicked.connect(self.take_picture)
+        self.dlgCamera.pushButton_browse_image.clicked.connect(lambda: self.browse_folder(
+            self.dlgCamera.lineEdit_image_path))
+        self.dlgCamera.comboBox_camera_selector.currentIndexChanged.connect(self.select_camera)
+        self.dlgCamera.pushButton_exit_camera.clicked.connect(self.close_camera)
 
         # Put the CRS window on the foreground when project saved
         self.iface.actionSaveProjectAs().triggered.connect(self.set_crs_on_top)
@@ -2376,13 +2418,15 @@ class APNCad:
 
         self.select_camera(0)
         self.save_path_image = QFileInfo(QgsProject.instance().fileName()).absolutePath()
-        self.lineedit_photo_path.setText(self.save_path_image)
+        self.dlgCamera.lineEdit_image_path.setText(self.save_path_image)
 
-        self.viewfinder.showMaximized()
+        # self.viewfinder.showMaximized()
+        self.dlgCamera.show()
 
     def close_camera(self):
         self.camera.stop()
-        self.viewfinder.close()
+        # self.viewfinder.close()
+        self.dlgCamera.close()
 
     def display_image(self):
         QDesktopServices.openUrl(QUrl("file:///" + self.captured_image_path))
@@ -2393,7 +2437,7 @@ class APNCad:
         # time stamp
         timestamp = time.strftime("%d-%b-%Y-%H_%M_%S")
 
-        self.save_path_image = self.lineedit_photo_path.text()
+        self.save_path_image = self.dlgCamera.lineEdit_image_path.text()
         # capture the image and save it on the save path
         self.captured_image_path = self.save_path_image + "/%s.jpg" % timestamp
         self.capture.capture(self.captured_image_path)
@@ -2405,7 +2449,7 @@ class APNCad:
         self.camera = QCamera(self.available_cameras[i])
 
         # setting view finder to the camera
-        self.camera.setViewfinder(self.viewfinder)
+        self.camera.setViewfinder(self.dlgCamera.camera_view_finder)
 
         # setting capture mode to the camera
         self.camera.setCaptureMode(QCamera.CaptureStillImage)
