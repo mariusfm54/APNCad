@@ -2132,6 +2132,7 @@ class APNCad:
         obj = self.find_nearest_features(point, button)
 
         if obj:
+            self.currentLayer.startEditing()
             self.currentLayer.beginEditCommand("Suppression entite")
             self.currentLayer.deleteFeature(self.closestFeatureId)
             self.currentLayer.endEditCommand()
