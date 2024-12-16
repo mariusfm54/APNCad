@@ -12,7 +12,8 @@ APNCad est le fruit de la collaboration entre la BNIC de Nancy et Marius Franço
 
 ## Auteur
 
-Marius François-Marchal
+Marius FRANÇOIS-MARCHAL
+
 E-mail : m.francois.marchal@gmail.com
 
 ## Licence
