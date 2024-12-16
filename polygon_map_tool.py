@@ -1,15 +1,19 @@
-from qgis.core import QgsProject, QgsVectorLayer, QgsFeature, QgsGeometry, QgsWkbTypes, QgsPoint, QgsPointXY, \
-    QgsSnappingUtils, QgsSnappingConfig, QgsTolerance
-from qgis.gui import QgsMapCanvas, QgsMapTool, QgsRubberBand, QgsMapToolEmitPoint, QgsSnapIndicator
-from qgis.PyQt.QtCore import Qt
-from PyQt5.QtCore import pyqtSignal, pyqtSlot
+from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtGui import QColor
+from qgis.PyQt.QtCore import Qt
+from qgis.core import (
+    QgsFeature,
+    QgsGeometry,
+    QgsWkbTypes,
+    QgsPointXY,
+)
+from qgis.gui import QgsMapTool, QgsRubberBand, QgsSnapIndicator
 from qgis.utils import iface
 
 
 # Create a map tool to draw the polyline
 class PolygonMapTool(QgsMapTool):
-    polygonFinished = pyqtSignal(QgsFeature)
+    polygon_finished = pyqtSignal(QgsFeature)
 
     def __init__(self, canvas):
         super().__init__(canvas)
@@ -28,19 +32,19 @@ class PolygonMapTool(QgsMapTool):
         current_point = self.toMapCoordinates(e.pos())
         if e.button() == Qt.LeftButton:
             # Try to snap to an existing vertex
-            snapMatch = self.snapper.snapToMap(e.pos())
-            self.snapIndicator.setMatch(snapMatch)
+            snap_match = self.snapper.snapToMap(e.pos())
+            self.snapIndicator.setMatch(snap_match)
             if self.snapIndicator.match().type():
                 current_point = self.snapIndicator.match().point()
             self.points.append(current_point)
             self.rb.addPoint(self.points[-1])
             self.rb.show()
             if len(self.points) == self.nb_pts_poly:
-                self.finishPolygon()
+                self.finish_polygon()
 
     def canvasReleaseEvent(self, e):
         if e.button() == Qt.RightButton:
-            self.finishPolygon()
+            self.finish_polygon()
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key_Escape:
@@ -49,22 +53,19 @@ class PolygonMapTool(QgsMapTool):
 
     def canvasMoveEvent(self, e):
         # Try to snap to an existing vertex
-        snapMatch = self.snapper.snapToMap(e.pos())
-        self.snapIndicator.setMatch(snapMatch)
+        snap_match = self.snapper.snapToMap(e.pos())
+        self.snapIndicator.setMatch(snap_match)
         if len(self.points) > 0:
             current_point = self.toMapCoordinates(e.pos())
             if self.snapIndicator.match().type():
                 current_point = self.snapIndicator.match().point()
             self.rb.movePoint(current_point)
 
-    def finishPolygon(self):
+    def finish_polygon(self):
         if len(self.points) > 1:
             feat = QgsFeature(iface.activeLayer().fields())
             feat.setGeometry(QgsGeometry.fromPolygonXY([[QgsPointXY(p) for p in self.points]]))
-            # iface.activeLayer().dataProvider().addFeatures([feat])
-            # self.canvas.refresh()
-            # iface.activeLayer().triggerRepaint()
             self.rb.reset(QgsWkbTypes.LineGeometry)
-            self.polygonFinished.emit(feat)
+            self.polygon_finished.emit(feat)
         self.points = []
         self.rb.reset(QgsWkbTypes.PolygonGeometry)

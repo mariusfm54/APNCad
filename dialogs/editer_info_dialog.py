@@ -23,13 +23,15 @@
 """
 
 import os
+from pathlib import Path
 
-from qgis.PyQt import uic
 from qgis.PyQt import QtWidgets
+from qgis.PyQt import uic
 
 # This loads your .ui file so that PyQt can populate your plugin with the elements from Qt Designer
-FORM_CLASS, _ = uic.loadUiType(os.path.join(
-    os.path.dirname(__file__), 'EditerInfo_dialog.ui'))
+FORM_CLASS, _ = uic.loadUiType(
+    os.path.join(str(Path(__file__).resolve().parent.parent), "forms", "editer_info_dialog.ui")
+)
 
 
 class EditerInfoDialog(QtWidgets.QDialog, FORM_CLASS):
