@@ -8,13 +8,19 @@ La documentation de l'extention est disponible ici : https://github.com/mariusfm
 
 ## Conception
 
-APNCad est le fruit de la collaboration entre la BNIC de Nancy et Marius François-Marchal
+APNCad est le fruit de la collaboration entre Jean-Noël MARCHAL de la BNIC de Nancy et Marius FRANÇOIS-MARCHAL.
 
 ## Auteur
 
 Marius FRANÇOIS-MARCHAL
 
 E-mail : m.francois.marchal@gmail.com
+
+Jean-Noël MARCHAL
+
+E-mail :
+
+marchal.jean-noel@neuf.fr
 
 ## Licence
 

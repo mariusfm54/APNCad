@@ -4,9 +4,9 @@ name=APNCad
 
 qgisMinimumVersion=3.0
 
-description=Applicatif destiné à la prise de notes sur tablette numérique lors des opérations de terrain réalisées pendant le remaniement cadastral. APNCad est le fruit de la collaboration entre la BNIC de Nancy et Marius François-Marchal.
+description=Applicatif destiné à la prise de notes sur tablette numérique lors des opérations de terrain réalisées pendant le remaniement cadastral. APNCad est le fruit de la collaboration entre Jean-Noël MARCHAL de la BNIC de Nancy et Marius FRANÇOIS-MARCHAL.
 
-about=Applicatif destiné à la prise de notes sur tablette numérique lors des opérations de terrain réalisées pendant le remaniement cadastral. APNCad est le fruit de la collaboration entre la BNIC de Nancy et Marius François-Marchal.
+about=Applicatif destiné à la prise de notes sur tablette numérique lors des opérations de terrain réalisées pendant le remaniement cadastral. APNCad est le fruit de la collaboration entre Jean-Noël MARCHAL de la BNIC de Nancy et Marius FRANÇOIS-MARCHAL.
 
 author=marius54
 email=m.francois.marchal@gmail.com
