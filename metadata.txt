@@ -11,8 +11,8 @@ about=Applicatif destiné à la prise de notes sur tablette numérique lors des 
 author=marius54
 email=m.francois.marchal@gmail.com
 
-version=2.2.4
-changelog= First stable version
+version=2.2.5
+changelog=
 
 
 # Tags are comma separated with spaces allowed

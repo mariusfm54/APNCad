@@ -1,4 +1,5 @@
 # APNCad
+[![QGIS.org](https://img.shields.io/badge/QGIS.org-published-green)](https://plugins.qgis.org/plugins/apncad/#plugin-versions)
 
 ## Description
 
@@ -18,9 +19,7 @@ E-mail : m.francois.marchal@gmail.com
 
 Jean-Noël MARCHAL
 
-E-mail :
-
-marchal.jean-noel@neuf.fr
+E-mail : marchal.jean-noel@neuf.fr
 
 ## Licence
 

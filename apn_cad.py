@@ -167,6 +167,9 @@ class APNCad:
         self.capture = None
         self.pointmax = None
 
+        # Nom du groupe parent contenant les sous groupes et les couches du plugin
+        self.parent_group_name = "Cad_Dessin"
+
         # Liste des couches pour construction / reconstruction projet (nom, type, groupe)
         self.list_layers = [
             ("debordT", "Point", "Symbole"),
@@ -1661,7 +1664,7 @@ class APNCad:
     def _setup_groups(self, build_external_group):
         root = QgsProject.instance().layerTreeRoot()
         """Find or create groups in the project."""
-        cad_dessin = root.findGroup("Cad_Dessin") or root.addGroup("Cad_Dessin")
+        cad_dessin = root.findGroup(self.parent_group_name) or root.addGroup(self.parent_group_name)
 
         if build_external_group:
             root.findGroup("CroqRem") or root.addGroup("CroqRem")
@@ -2773,14 +2776,40 @@ class APNCad:
 
         return True
 
+    def _belongs_to_plugin_group(self, layer):
+        """
+        Returns True is layer belongs to theparent group of the plugin layers.
+        If the layer is not inside any group (i.e., it's at the root), return False.
+        """
+
+        # Get the root of the layer tree
+        root = QgsProject.instance().layerTreeRoot()
+
+        # Find the layer node in the tree
+        layer_node = root.findLayer(layer.id())
+        if not layer_node:
+            return False  # Layer not found in the tree
+
+        # Traverse up to the top-level group
+        parent = layer_node.parent()
+        if parent == root:
+            return False  # Layer is directly under root, not in any group
+
+        while parent.parent() != root:
+            parent = parent.parent()
+
+        return parent.name() == self.parent_group_name
+
     def _get_valid_layers(self):
         """Return a list of valid vector layers excluding specific group names."""
         valid_layers = []
         for layer in self.canvas.layers():
-            if layer.type() == QgsMapLayer.VectorLayer and layer.featureCount() > 0:
-                group_name = QgsProject.instance().layerTreeRoot().findLayer(layer.id()).parent().name()
-                if group_name not in {"Restit", "CroqRem", "Ancien_Plan", "Ortho"}:
-                    valid_layers.append(layer)
+            if (
+                layer.type() == QgsMapLayer.VectorLayer
+                and layer.featureCount() > 0
+                and self._belongs_to_plugin_group(layer)
+            ):
+                valid_layers.append(layer)
         return valid_layers
 
     # noinspection PyMethodMayBeStatic
