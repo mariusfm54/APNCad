@@ -20,8 +20,7 @@
  ***************************************************************************/
 """
 
-from PyQt5.QtCore import pyqtSignal, pyqtSlot
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import pyqtSignal, pyqtSlot, Qt
 from qgis.core import QgsPointXY
 from qgis.gui import QgsMapToolEmitPoint, QgsSnapIndicator
 

@@ -23,17 +23,16 @@
  ***************************************************************************/
 """
 import json
-import math
 import os.path
-import time
+import subprocess
+from pathlib import Path
 
-from PyQt5.QtCore import QUrl
-from PyQt5.QtGui import QDesktopServices, QMouseEvent, QKeyEvent
-from PyQt5.QtMultimedia import QCameraInfo, QCamera, QCameraImageCapture
-from PyQt5.QtWidgets import QAction, QToolButton, QMenu, QLineEdit, QPushButton, QToolBar, QWidget
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QFileInfo, Qt, QVariant
+from qgis.PyQt.QtCore import QUrl, QEvent, QPointF
+from qgis.PyQt.QtGui import QDesktopServices, QMouseEvent, QKeyEvent
 from qgis.PyQt.QtGui import QIcon, QCursor, QPixmap
-from qgis.PyQt.QtWidgets import QDockWidget, QFileDialog
+from qgis.PyQt.QtWidgets import QAction, QToolButton, QMenu, QLineEdit, QPushButton, QToolBar, QWidget
+from qgis.PyQt.QtWidgets import QDockWidget, QFileDialog, QApplication
 from qgis.core import (
     QgsCoordinateReferenceSystem,
     QgsProject,
@@ -49,6 +48,10 @@ from qgis.core import (
     QgsField,
     QgsVectorFileWriter,
     QgsLayerTreeLayer,
+    QgsPalLayerSettings,
+    QgsTextFormat,
+    QgsUnitTypes,
+    QgsVectorLayerSimpleLabeling,
 )
 from qgis.gui import QgsMapToolEmitPoint, QgsMapToolPan
 from qgis.utils import iface
@@ -56,16 +59,15 @@ from qgis.utils import iface
 # Initialize Qt resources from file resources.py
 from .resources import *  # /NOSONAR
 
-from .dialogs.camera_dialog import CameraDialog
+from .dialogs.build_layer_dialog import BuildLayerDialog
 from .dialogs.choisir_debord_dialog import ChoisirDebordDialog
 from .dialogs.clavier_num_dialog import ClavierNumDialog
+from .dialogs.config_image_dialog import ConfigImageDialog
 from .dialogs.config_points_dialog import ConfigPointsDialog
 from .dialogs.crs_dialog import CrsDialog
-from .dialogs.build_layer_dialog import BuildLayerDialog
 from .dialogs.editer_image_dialog import EditerImageDialog
 from .dialogs.editer_info_dialog import EditerInfoDialog
 from .dialogs.entrer_attribut_dialog import EntrerAttributDialog
-from .dialogs.laser_dialog import LasermDialog
 from .dialogs.liste_point_dialog import ListePointDialog
 from .dialogs.recherche_parc_dialog import RechercheParcDialog
 from .dialogs.select_feat_dialog import SelectFeatDialog
@@ -149,6 +151,7 @@ class APNCad:
         self.dlg_attribut = None
         self.dlg_info = None
         self.dlg_image = None
+        self.dlg_config_img = None
         self.dlg_config_pt = None
         self.dlg_num_parc = None
         self.dlg_liste = None
@@ -157,7 +160,6 @@ class APNCad:
         self.dlg_build_layer = None
         self.dlg_camera = None
         self.available_cameras = None
-        self.dlg_laser = None
         self.dlg_parc = None
         self.dlg_near = None
 
@@ -260,8 +262,22 @@ class APNCad:
         self.nb_pts_poly = 100
 
         # Camera path to save
-        self.save_path_image = ""
-        self.captured_image_path = ""
+        self.image_config_filepath = Path(os.environ["TEMP"]) / "apncad" / "image_config.json"
+        self.camera_exe_filepath, self.img_edit_exe_filepath, self.captured_image_dirpath = self.read_image_config()
+
+        # Label settings for proprio label
+        label_settings = QgsPalLayerSettings()
+        text_format = QgsTextFormat()
+        text_format.setSize(0.5)  # value
+        text_format.setSizeUnit(QgsUnitTypes.RenderMapUnits)
+        label_settings.setFormat(text_format)
+        label_settings.fieldName = (
+            "\"Code\" || '\n' || \"Propriétaires\" || '\n' || "
+            "\"Propriétaires (infos détaillées)\" || '\n' || "
+            "\"Contenance\" || ' m2'"
+        )
+        label_settings.isExpression = True
+        self.proprio_label = QgsVectorLayerSimpleLabeling(label_settings)
 
         # Outils
         self.canvas = self.iface.mapCanvas()
@@ -484,7 +500,7 @@ class APNCad:
         # Bouton deroulant couche
         self.couche_button = QToolButton()
         self.couche_button.setMenu(QMenu())
-        self.couche_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.couche_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.general_toolbar.addWidget(self.couche_button)
 
         # Bouton afficher panneau couche
@@ -514,21 +530,21 @@ class APNCad:
         # Bouton deroulant visu couche
         self.visu_button = QToolButton()
         self.visu_button.setMenu(QMenu())
-        self.visu_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.visu_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.general_toolbar.addWidget(self.visu_button)
 
         # Bouton visu couche text CroqRem
         icon_path = ":/APNCad/icon/icon50.png"
         self.add_action(
             icon_path,
-            text=self.tr("Afficher/cacher texte CroqRem"),
+            text=self.tr("Afficher/cacher infos propriétaires"),
             toolbutton=self.visu_button,
-            callback=self.visu_text_croqrem,
-            key_action="action_display_croqrem",
+            callback=self.visu_info_proprio,
+            key_action="action_display_proprio",
             parent=self.iface.mainWindow(),
         )
 
-        self.visu_button.setDefaultAction(self.actions["action_display_croqrem"])  # action par default du bouton
+        self.visu_button.setDefaultAction(self.actions["action_display_proprio"])  # action par default du bouton
 
         # Bouton visu couche ortho
         icon_path = ":/APNCad/icon/icon51.png"
@@ -566,7 +582,7 @@ class APNCad:
         # Bouton deroulant translation
         self.translation_button = QToolButton()
         self.translation_button.setMenu(QMenu())
-        self.translation_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.translation_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.general_toolbar.addWidget(self.translation_button)
 
         # Bouton translater feature
@@ -663,7 +679,7 @@ class APNCad:
         # Bouton deroulant point
         self.point_button = QToolButton()
         self.point_button.setMenu(QMenu())
-        self.point_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.point_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.point_toolbar.addWidget(self.point_button)
 
         # Bouton tracer point
@@ -720,7 +736,7 @@ class APNCad:
         # Bouton deroulant cote
         self.cote_button = QToolButton()
         self.cote_button.setMenu(QMenu())
-        self.cote_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.cote_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.dessin_toolbar.addWidget(self.cote_button)
 
         # bouton coteSurLigne
@@ -774,7 +790,7 @@ class APNCad:
         # Bouton deroulant ligne
         self.ligne_button = QToolButton()
         self.ligne_button.setMenu(QMenu())
-        self.ligne_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.ligne_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.dessin_toolbar.addWidget(self.ligne_button)
 
         # bouton ligne continue
@@ -819,7 +835,7 @@ class APNCad:
         # Bouton deroulant mur dessin
         self.mur_button = QToolButton()
         self.mur_button.setMenu(QMenu())
-        self.mur_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.mur_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.dessin_toolbar.addWidget(self.mur_button)
 
         # bouton Mur Droite
@@ -849,7 +865,7 @@ class APNCad:
         # Bouton deroulant texte
         self.texte_button = QToolButton()
         self.texte_button.setMenu(QMenu())
-        self.texte_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.texte_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.dessin_toolbar.addWidget(self.texte_button)
 
         # bouton Texte
@@ -884,7 +900,7 @@ class APNCad:
         # Bouton deroulant mur symbole
         self.mur_mit_button = QToolButton()
         self.mur_mit_button.setMenu(QMenu())
-        self.mur_mit_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.mur_mit_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.symbole_toolbar.addWidget(self.mur_mit_button)
 
         # bouton mur mitoyen
@@ -982,7 +998,7 @@ class APNCad:
         # Bouton deroulant borne
         self.borne_button = QToolButton()
         self.borne_button.setMenu(QMenu())
-        self.borne_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.borne_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.symbole_toolbar.addWidget(self.borne_button)
 
         # bouton borne
@@ -1089,7 +1105,7 @@ class APNCad:
         # Bouton deroulant piece jointe
         self.pj_button = QToolButton()
         self.pj_button.setMenu(QMenu())
-        self.pj_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.pj_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.symbole_toolbar.addWidget(self.pj_button)
 
         # bouton image
@@ -1104,6 +1120,17 @@ class APNCad:
         )
 
         self.pj_button.setDefaultAction(self.actions["action_image"])  # action par default du bouton
+
+        # Bouton configurer image
+        icon_path = ":/APNCad/icon/icon72.png"
+        self.add_action(
+            icon_path,
+            text=self.tr("Configurer image"),
+            toolbutton=self.pj_button,
+            callback=self.config_image,
+            key_action="action_config_image",
+            parent=self.iface.mainWindow(),
+        )
 
         # bouton Das
         icon_path = ":/APNCad/icon/icon52.png"
@@ -1175,7 +1202,7 @@ class APNCad:
         # Bouton deroulant num parcelle
         self.num_parc_button = QToolButton()
         self.num_parc_button.setMenu(QMenu())
-        self.num_parc_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.num_parc_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.croquis_toolbar.addWidget(self.num_parc_button)
 
         # tracer num parc
@@ -1227,7 +1254,7 @@ class APNCad:
         # Bouton deroulant fiscalite
         self.fisc_button = QToolButton()
         self.fisc_button.setMenu(QMenu())
-        self.fisc_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.fisc_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.croquis_toolbar.addWidget(self.fisc_button)
 
         # bouton fiscalite
@@ -1290,7 +1317,7 @@ class APNCad:
         # Bouton deroulant petit-grand texte
         self.dim_texte_button = QToolButton()
         self.dim_texte_button.setMenu(QMenu())
-        self.dim_texte_button.setPopupMode(QToolButton.MenuButtonPopup)
+        self.dim_texte_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         self.croquis_toolbar.addWidget(self.dim_texte_button)
 
         # bouton GrandTexte
@@ -1380,7 +1407,7 @@ class APNCad:
         self.boutton_tourner_droite.setIcon(tourner_droite_icon)
         self.tourner_droite_widget = self.enter_toolbar.addWidget(self.boutton_tourner_droite)
         self.tourner_droite_widget.setToolTip(self.tr("Rotation droite"))
-        self.boutton_tourner_droite.clicked.connect(self.make_tourner(10))
+        self.boutton_tourner_droite.clicked.connect(lambda: self.rotate(10))
 
         # Widget toolbar tourner gauche
         self.boutton_tourner_gauche = QPushButton(self.iface.mainWindow())
@@ -1390,7 +1417,7 @@ class APNCad:
         self.boutton_tourner_gauche.setIcon(tourner_gauche_icon)
         self.tourner_gauche_widget = self.enter_toolbar.addWidget(self.boutton_tourner_gauche)
         self.tourner_gauche_widget.setToolTip(self.tr("Rotation gauche"))
-        self.boutton_tourner_gauche.clicked.connect(self.make_tourner(-10))
+        self.boutton_tourner_gauche.clicked.connect(lambda: self.rotate(-10))
 
         ################################################################################################################
         # Dialog configuration
@@ -1430,11 +1457,9 @@ class APNCad:
 
         # Fenetre entrer attribut (cote, modifier)
         self.dlg_attribut = EntrerAttributDialog()
-        self.dlg_attribut.setFixedSize(430, 169)
         self.dlg_attribut.pushButton_clavier.clicked.connect(
             lambda: self.clavier_num(self.dlg_attribut.lineedit_attribut)
         )
-        self.dlg_attribut.pushButton_laser.clicked.connect(self.mesure_laser)
         # lecture des attributs dans fichier txt
         with open(os.path.join(self.plugin_dir, "attribut_texte.txt")) as file_txt:
             txt = file_txt.read()
@@ -1453,14 +1478,37 @@ class APNCad:
 
         # Fenetre editer image
         self.dlg_image = EditerImageDialog()
-        self.dlg_image.setFixedSize(544, 136)
-        self.dlg_image.pushButton_browse.clicked.connect(
-            lambda: self.browse_file(self.dlg_image.lineedit_attribut, "Image files (*.jpg *.png);;PDF files (*.pdf)")
+        self.dlg_image.pbutton_take_picture.clicked.connect(self.open_camera)
+        self.dlg_image.pbutton_auto_fill.clicked.connect(self.fill_last_picture)
+        self.dlg_image.pbutton_browse.clicked.connect(
+            lambda: self.browse_file(
+                self.dlg_image.lineedit_attribut,
+                "Image files (*.jpg *.png *.jpeg *.bmp *.gif *.tiff *.webp);;PDF files (*.pdf)",
+                self.captured_image_dirpath,
+            )
         )
-        self.dlg_image.pushButton_picture.clicked.connect(self.open_camera)
+        self.dlg_image.pbutton_edit_img.clicked.connect(self.open_edit_img_app)
         self.dlg_image.pushButton_clavier.clicked.connect(lambda: self.clavier_num(self.dlg_image.lineedit_attribut))
         self.dlg_image.comboBox_field.currentIndexChanged.connect(
             lambda: self.select_attribute_field(self.dlg_image.lineedit_attribut, self.dlg_image.comboBox_field)
+        )
+
+        # Fenetre config images
+        self.dlg_config_img = ConfigImageDialog()
+        self.dlg_config_img.pbutton_browse_cam.clicked.connect(
+            lambda: self.browse_file(self.dlg_config_img.lineedit_cam_path, "Executable Files (*.exe);;All Files (*)")
+        )
+        self.dlg_config_img.checkbox_win_cam.toggled.connect(self.on_checkbox_wincam_toggled)
+
+        self.dlg_config_img.pbutton_browse_img_edit.clicked.connect(
+            lambda: self.browse_file(
+                self.dlg_config_img.lineedit_img_edit_path, "Executable Files (*.exe);;All Files (*)"
+            )
+        )
+        self.dlg_config_img.checkbox_win_edit_img.toggled.connect(self.on_checkbox_winedit_toggled)
+
+        self.dlg_config_img.pbutton_browse_savedir.clicked.connect(
+            lambda: self.browse_folder(self.dlg_config_img.lineedit_savedir)
         )
 
         # Fenetre parametres point
@@ -1489,7 +1537,7 @@ class APNCad:
         self.dlg_liste = ListePointDialog()
         self.dlg_liste.setFixedSize(322, 352)
 
-        # Fenetre liste points
+        # Fenetre liste points parc
         self.dlg_liste_parc = ListePointDialog()
         self.dlg_liste_parc.setFixedSize(322, 352)
 
@@ -1508,29 +1556,8 @@ class APNCad:
         self.dlg_build_layer.cancel_build_button.clicked.connect(lambda: self.dlg_build_layer.close())
         self.dlg_build_layer.build_pg_bar.setValue(0)
 
-        # Camera dialog (built here because QGIS cannot read QCameraViewfinder in ui)
-        self.dlg_camera = CameraDialog()
-        self.dlg_camera.setWindowFlag(Qt.WindowCloseButtonHint, False)
-        self.available_cameras = QCameraInfo.availableCameras()
-
-        # adding items to the combo box
-        self.dlg_camera.comboBox_camera_selector.addItems([camera.description() for camera in self.available_cameras])
-
-        self.dlg_camera.pushButton_capture.clicked.connect(self.take_picture)
-        self.dlg_camera.pushButton_browse_image.clicked.connect(
-            lambda: self.browse_folder(self.dlg_camera.lineEdit_image_path)
-        )
-        self.dlg_camera.comboBox_camera_selector.currentIndexChanged.connect(self.select_camera)
-        self.dlg_camera.pushButton_exit_camera.clicked.connect(self.close_camera)
-
         # Put the CRS window on the foreground when project saved
         self.iface.actionSaveProjectAs().triggered.connect(self.set_crs_on_top)
-
-        # Fenetre mesure laser metre
-        self.dlg_laser = LasermDialog()
-        self.dlg_laser.setFixedSize(632, 178)
-        self.dlg_laser.lineEdit_dist_horiz.setReadOnly(True)
-        self.dlg_laser.lineEdit_dist.textChanged.connect(self.calcul_dist_horizon)
 
         # Fenetre recherche parcelle
         self.dlg_parc = RechercheParcDialog()
@@ -1555,7 +1582,7 @@ class APNCad:
     # Choisir SCR
     def set_crs(self):
         self.dlg_crs.show()
-        result = self.dlg_crs.exec_()
+        result = self.dlg_crs.exec()
         if result:
             crs = self.crs_dict[str(self.dlg_crs.comboBox_crs.currentText())]
             QgsProject.instance().setCrs(QgsCoordinateReferenceSystem(crs))
@@ -1588,7 +1615,7 @@ class APNCad:
         for layer_info in list_layers_sorted:
             # If the layer doesn't exist in the project
             if len(QgsProject.instance().mapLayersByName(layer_info[0])) == 0 and (
-                not self._layer_exists(layer_info[0], path_proj)
+                not self.layer_exists(layer_info[0], path_proj)
             ):
                 new_layer_nb += 1
             else:
@@ -1635,7 +1662,7 @@ class APNCad:
 
         # Set up groups or find existing ones
         build_external_group = self.dlg_build_layer.build_group_checkbox.isChecked()
-        layer_groups = self._setup_groups(build_external_group)
+        layer_groups = self.setup_groups(build_external_group)
 
         list_layers_sorted = sorted(self.list_layers, key=lambda s: s[0].lower(), reverse=True)
         self.dlg_build_layer.build_pg_bar.setMinimum(0)
@@ -1647,12 +1674,12 @@ class APNCad:
             if len(QgsProject.instance().mapLayersByName(layer_info[0])) == 0:
                 # If the layer shapefile already exists in project dir meaning the layer has been manually
                 # renamed : we do not want to replace it
-                if self._layer_exists(layer_info[0], path_proj):
-                    self._load_existing_layer(layer_info, path_proj, layer_groups)
+                if self.layer_exists(layer_info[0], path_proj):
+                    self.load_existing_layer(layer_info, path_proj, layer_groups)
                 else:
-                    self._create_layer(layer_info, crs, path_proj, layer_groups)
+                    self.create_layer(layer_info, crs, path_proj, layer_groups)
             else:
-                self._reload_layer_style(layer_info)
+                self.reload_layer_style(layer_info)
 
             self.dlg_build_layer.build_pg_bar.setValue(i + 1)
 
@@ -1661,7 +1688,7 @@ class APNCad:
         self.iface.messageBar().pushMessage("La construction s'est terminée avec succès.", level=Qgis.Info, duration=6)
 
     # noinspection PyMethodMayBeStatic
-    def _setup_groups(self, build_external_group):
+    def setup_groups(self, build_external_group):
         root = QgsProject.instance().layerTreeRoot()
         """Find or create groups in the project."""
         cad_dessin = root.findGroup(self.parent_group_name) or root.addGroup(self.parent_group_name)
@@ -1683,16 +1710,16 @@ class APNCad:
         return groups
 
     # noinspection PyMethodMayBeStatic
-    def _layer_exists(self, layer_name, path_proj):
+    def layer_exists(self, layer_name, path_proj):
         """Check if a layer exists in the project directory."""
         return os.path.exists(os.path.join(path_proj, f"{layer_name}.shp"))
 
-    def _create_layer(self, layer_info, crs, path_proj, layer_groups):
+    def create_layer(self, layer_info, crs, path_proj, layer_groups):
         """Create a new layer and assign it to the correct group."""
         fn = os.path.join(path_proj, f"{layer_info[0]}.shp")
-        layer_fields = self._define_fields(layer_info)
+        layer_fields = self.define_fields(layer_info)
 
-        writer, feat = self._initialize_layer_writer(layer_info, crs, fn, layer_fields)
+        writer, feat = self.initialize_layer_writer(layer_info, crs, fn, layer_fields)
 
         feat.setAttributes([1])
         writer.addFeature(feat)
@@ -1703,11 +1730,11 @@ class APNCad:
         # Remove the initial dummy feature
         layer.dataProvider().deleteFeatures([0])
 
-        self._load_and_assign_layer_style(layer, layer_info)
-        self._add_layer_to_group(layer_info, layer, layer_groups)
+        self.load_and_assign_layer_style(layer, layer_info)
+        self.add_layer_to_group(layer_info, layer, layer_groups)
 
     # noinspection PyMethodMayBeStatic
-    def _initialize_layer_writer(self, layer_info, crs, fn, layer_fields):
+    def initialize_layer_writer(self, layer_info, crs, fn, layer_fields):
         """Initialize a QgsVectorFileWriter based on the layer type."""
         writer, feat = None, None
         if layer_info[1] == "Point":
@@ -1745,7 +1772,7 @@ class APNCad:
         return writer, feat
 
     # noinspection PyMethodMayBeStatic
-    def _define_fields(self, layer_info):
+    def define_fields(self, layer_info):
         """Define the fields for the layer based on its type."""
         layer_fields = QgsFields()
         if layer_info[0] in ["Point", "Numparc"]:
@@ -1757,16 +1784,16 @@ class APNCad:
             layer_fields.append(QgsField("ID", QVariant.String))
         return layer_fields
 
-    def _load_existing_layer(self, layer_info, path_proj, layer_groups):
+    def load_existing_layer(self, layer_info, path_proj, layer_groups):
         """Load an existing layer and assign it to the correct group."""
         fn = os.path.join(path_proj, f"{layer_info[0]}.shp")
         layer = self.iface.addVectorLayer(fn, "", "ogr")
         layer.setName(layer_info[0])
 
-        self._load_and_assign_layer_style(layer, layer_info)
-        self._add_layer_to_group(layer_info, layer, layer_groups)
+        self.load_and_assign_layer_style(layer, layer_info)
+        self.add_layer_to_group(layer_info, layer, layer_groups)
 
-    def _load_and_assign_layer_style(self, layer, layer_info):
+    def load_and_assign_layer_style(self, layer, layer_info):
         """Load the style for the layer and handle errors."""
         qml_filepath = os.path.join(self.plugin_dir, "styles", f"{layer_info[0]}.qml")
         success = layer.loadNamedStyle(qml_filepath)
@@ -1776,7 +1803,7 @@ class APNCad:
             )
 
     # noinspection PyMethodMayBeStatic
-    def _add_layer_to_group(self, layer_info, layer, layer_groups):
+    def add_layer_to_group(self, layer_info, layer, layer_groups):
         """Assign the created or loaded layer to the appropriate group."""
         root = QgsProject.instance().layerTreeRoot()
         layer_node = root.findLayer(layer.id())
@@ -1793,10 +1820,10 @@ class APNCad:
         # Remove the layer from its initial parent group
         layer_node.parent().removeChildNode(layer_node)
 
-    def _reload_layer_style(self, layer_info):
+    def reload_layer_style(self, layer_info):
         """Reload the style of an existing layer."""
         layer = QgsProject.instance().mapLayersByName(layer_info[0])[0]
-        self._load_and_assign_layer_style(layer, layer_info)
+        self.load_and_assign_layer_style(layer, layer_info)
 
     # Bouton start
     def start_function(self):
@@ -1886,7 +1913,7 @@ class APNCad:
         # select premiere zone de saisie
         self.dlg_config_pt.lineedit_numin.setFocus()
         # Run the dialog event loop
-        result = self.dlg_config_pt.exec_()
+        result = self.dlg_config_pt.exec()
         # See if OK was pressed
         if result:
             try:
@@ -1956,7 +1983,7 @@ class APNCad:
     def config_num_parc(self):
         self.dlg_num_parc.show()
         self.dlg_num_parc.lineedit_numin.setFocus()
-        result = self.dlg_num_parc.exec_()
+        result = self.dlg_num_parc.exec()
         if result:
             try:
                 self.num_parc = int(self.dlg_num_parc.lineedit_numin.value())
@@ -2100,7 +2127,7 @@ class APNCad:
             dlg.lineedit_attribut.setFocus()
             dlg.comboBox_field.addItems([field.name() for field in self.current_layer.fields()])
 
-            result = dlg.exec_()
+            result = dlg.exec()
             # See if OK was pressed
             if result:
                 try:
@@ -2127,22 +2154,29 @@ class APNCad:
 
     # valider polyligne
     def clic_droit(self):
+        # Local position (center of canvas)
+        local_pos = QPointF(self.canvas.rect().center())
+
+        # Global position
+        global_pos = QPointF(self.canvas.mapToGlobal(self.canvas.rect().center()))
+
         mouse_event = QMouseEvent(
-            QMouseEvent.MouseButtonRelease,
-            self.canvas.mapToGlobal(self.canvas.rect().center()),
-            Qt.RightButton,
-            Qt.RightButton,
-            Qt.NoModifier,
+            QEvent.Type.MouseButtonRelease,
+            local_pos,
+            global_pos,
+            Qt.MouseButton.RightButton,
+            Qt.MouseButton.RightButton,
+            Qt.KeyboardModifier.NoModifier,
         )
+
         self.canvas.mouseReleaseEvent(mouse_event)
 
     def appui_echap(self):
-
         self.point_list = []
-        key_event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier)
-        self.canvas.keyPressEvent(key_event)
 
-        # self.canvas.setMapTool(self.toolPan)
+        key_event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier, "")
+
+        QApplication.sendEvent(self.canvas, key_event)
 
     def zoom_plus(self):
         self.canvas.zoomIn()
@@ -2153,19 +2187,16 @@ class APNCad:
     def outil_main(self):
         self.canvas.setMapTool(self.tool_pan)
 
-    def make_tourner(self, degree):
-        def tourner():
-            rotation_actu = self.canvas.rotation()
-            rotation_new = rotation_actu + degree
-            self.canvas.setRotation(rotation_new)
-            self.canvas.refresh()
-
-        return tourner
+    def rotate(self, degree):
+        rotation_actu = self.canvas.rotation()
+        rotation_new = rotation_actu + degree
+        self.canvas.setRotation(rotation_new)
+        self.canvas.refresh()
 
     # suppression objet
     def set_delete_tool(self):
         self.canvas.setMapTool(self.delete_tool)
-        self.canvas.setCursor(QCursor(Qt.PointingHandCursor))
+        self.canvas.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
     def delete_object(self, point, button):
         obj = self.find_nearest_features(point, button)
@@ -2182,7 +2213,7 @@ class APNCad:
     def set_edit_tool(self):
         # self.dlg.reject()   #ferme la fenetre
         self.canvas.setMapTool(self.edit_attribute_tool)
-        self.canvas.setCursor(QCursor(Qt.PointingHandCursor))
+        self.canvas.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
     def edit_attribute(self, point, button):
         attribute_change_label = "Changement attribut"
@@ -2195,22 +2226,22 @@ class APNCad:
 
         # Handle special editing for 'information' layer
         if self.current_layer == self.layers["information"]:
-            self._edit_special_layer(self.dlg_info, self.current_layer, 0, attribute_change_label)
+            self.edit_special_layer(self.dlg_info, self.current_layer, 0, attribute_change_label)
             self.dlg_info.textEdit.clear()
 
         # Handle image layer editing
         elif self.current_layer in [self.layers["image"], self.layers["Das"]]:
-            self._prepare_image_layer_editing()
-            self._process_result(self.dlg_image, attribute_change_label)
+            self.prepare_image_layer_editing()
+            self.process_result(self.dlg_image, attribute_change_label)
 
         # Handle all other layers
         else:
-            self._prepare_default_layer_editing()
-            self._process_result(self.dlg_attribut, attribute_change_label)
+            self.prepare_default_layer_editing()
+            self.process_result(self.dlg_attribut, attribute_change_label)
 
         self.current_layer.removeSelection()
 
-    def _edit_special_layer(self, dialog, layer, field_index, attribute_change_label):
+    def edit_special_layer(self, dialog, layer, field_index, attribute_change_label):
         """Handle the special edit window for specific layers."""
         dialog.show()
         dialog.textEdit.setFocus()
@@ -2221,7 +2252,7 @@ class APNCad:
         except Exception as e:
             print(e)
 
-        result = dialog.exec_()
+        result = dialog.exec()
         if result:
             try:
                 new_value = dialog.textEdit.toPlainText()
@@ -2232,7 +2263,7 @@ class APNCad:
             except Exception as e:
                 print(e)
 
-    def _prepare_image_layer_editing(self):
+    def prepare_image_layer_editing(self):
         """Prepare the image layer editing dialog."""
         self.dlg_image.show()
         self.dlg_image.lineedit_attribut.setFocus()
@@ -2244,7 +2275,7 @@ class APNCad:
         except Exception as e:
             print(e)
 
-    def _prepare_default_layer_editing(self):
+    def prepare_default_layer_editing(self):
         """Prepare the default layer editing dialog."""
         self.dlg_attribut.show()
         self.dlg_attribut.lineedit_attribut.setFocus()
@@ -2257,9 +2288,9 @@ class APNCad:
         except Exception as e:
             print(e)
 
-    def _process_result(self, dialog, attribute_change_label):
+    def process_result(self, dialog, attribute_change_label):
         """Process the result of the dialog and apply changes to the feature."""
-        result = dialog.exec_()
+        result = dialog.exec()
         if result:
             try:
                 new_value = dialog.lineedit_attribut.value()
@@ -2283,7 +2314,7 @@ class APNCad:
 
     def set_action_tool(self):
         self.canvas.setMapTool(self.action_tool)
-        self.canvas.setCursor(QCursor(Qt.PointingHandCursor))
+        self.canvas.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
     def trigger_action(self, point, button):
         # self.save_layers()
@@ -2355,7 +2386,7 @@ class APNCad:
         self.dlg_debord.show()
         self.dlg_debord.lineedit_debord.setFocus()
 
-        result = self.dlg_debord.exec_()
+        result = self.dlg_debord.exec()
         # See if OK was pressed
         if result:
             try:
@@ -2406,10 +2437,12 @@ class APNCad:
         self.pj_button.setDefaultAction(self.actions["action_info"])
 
     # noinspection PyMethodMayBeStatic
-    def browse_file(self, lineedit, file_filter):
-        fname = QFileDialog.getOpenFileName(
-            None, "Ouvrir Fichier", QFileInfo(QgsProject.instance().fileName()).absolutePath(), file_filter
-        )
+    def browse_file(self, lineedit, file_filter, root_dir=None):
+        rdir = root_dir
+        if (not rdir) or (not os.path.exists(rdir)):
+            rdir = QFileInfo(QgsProject.instance().fileName()).absolutePath()
+
+        fname = QFileDialog.getOpenFileName(None, "Ouvrir Fichier", rdir, file_filter)
         lineedit.setText(fname[0])
 
     # noinspection PyMethodMayBeStatic
@@ -2429,86 +2462,193 @@ class APNCad:
             old_attr = attributes[index]
             lineedit.setText(str(old_attr))
 
-    def open_camera(self):
+    def get_most_recent_image(self):
+        directory = Path(self.captured_image_dirpath)
 
-        # if no camera found
-        if not self.available_cameras:
-            self.iface.messageBar().pushMessage("Aucune caméra détectée", level=Qgis.Info, duration=4)
+        if not directory.is_dir():
+            raise ValueError(f"{directory} is not a valid directory")
+
+        image_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".webp"}
+
+        images = (p for p in directory.iterdir() if p.is_file() and p.suffix.lower() in image_extensions)
+
+        return max(images, key=lambda p: p.stat().st_mtime, default=None)
+
+    def fill_last_picture(self):
+        if not self.captured_image_dirpath:
+            self.iface.messageBar().pushMessage(
+                "Aucun chemin vers le répertoire de sauvegarde des photos n'a été renseigné.",
+                level=Qgis.Critical,
+                duration=6,
+            )
+            return
+        if not os.path.exists(self.captured_image_dirpath):
+            self.iface.messageBar().pushMessage(
+                "Le chemin vers le répertoire de sauvegarde des photos renseigné est invalide.",
+                level=Qgis.Critical,
+                duration=6,
+            )
             return
 
-        self.select_camera(0)
-        self.save_path_image = QFileInfo(QgsProject.instance().fileName()).absolutePath()
-        self.dlg_camera.lineEdit_image_path.setText(self.save_path_image)
-
-        # self.viewfinder.showMaximized()
-        self.dlg_camera.show()
-
-    def close_camera(self):
-        self.camera.stop()
-        # self.viewfinder.close()
-        self.dlg_camera.close()
-
-    def display_image(self):
-        QDesktopServices.openUrl(QUrl("file:///" + self.captured_image_path))
-        self.dlg_image.lineedit_attribut.setText(self.captured_image_path)
-        self.close_camera()
-
-    def take_picture(self):
-        # time stamp
-        timestamp = time.strftime("%d-%b-%Y-%H_%M_%S")
-
-        self.save_path_image = self.dlg_camera.lineEdit_image_path.text()
-        # capture the image and save it on the save path
-        self.captured_image_path = self.save_path_image + "/%s.jpg" % timestamp
-        self.capture.capture(self.captured_image_path)
-
-    # method to select camera
-    def select_camera(self, i):
-
-        # getting the selected camera
-        self.camera = QCamera(self.available_cameras[i])
-
-        # setting view finder to the camera
-        self.camera.setViewfinder(self.dlg_camera.camera_view_finder)
-
-        # setting capture mode to the camera
-        self.camera.setCaptureMode(QCamera.CaptureStillImage)
-
-        # if any error occur show the alert
-        # noinspection PyUnresolvedReferences
-        self.camera.error.connect(
-            lambda: self.iface.messageBar().pushMessage(
-                "Erreur lors de l'utilisation' de la caméra", level=Qgis.Critical, duration=4
+        last_img_filepath = self.get_most_recent_image()
+        if not last_img_filepath:
+            self.iface.messageBar().pushMessage(
+                "Aucune photo n'a été trouvée dans le répertoire de sauvegarde renseigné.",
+                level=Qgis.Critical,
+                duration=6,
             )
-        )
+            return
+        self.dlg_image.lineedit_attribut.setText(str(last_img_filepath))
 
-        # start the camera
-        self.camera.start()
-
-        # creating a QCameraImageCapture object
-        self.capture = QCameraImageCapture(self.camera)
-        # noinspection PyUnresolvedReferences
-        self.capture.imageSaved.connect(self.display_image)
-        # showing alert if error occur
-        # noinspection PyUnresolvedReferences
-        self.capture.error.connect(
-            lambda: self.iface.messageBar().pushMessage(
-                "Erreur lors de l'utilisation' de la caméra", level=Qgis.Critical, duration=4
+    def open_camera(self):
+        if not self.camera_exe_filepath:
+            self.iface.messageBar().pushMessage(
+                "Aucun exécutable vers une application caméra n'a été renseigné.",
+                level=Qgis.Critical,
+                duration=6,
             )
-        )
+            return
+        if (not os.path.exists(self.camera_exe_filepath)) and self.camera_exe_filepath != "windows":
+            self.iface.messageBar().pushMessage(
+                "Le chemin de l'exécutable vers une application caméra renseigné est invalide.",
+                level=Qgis.Critical,
+                duration=6,
+            )
+            return
 
-        # when image captured showing message
-        # self.capture.imageCaptured.connect(lambda d,
-        #                                           i: self.status.showMessage("Image captured : "
-        #                                                                      + str(self.save_seq)))
+        if self.camera_exe_filepath == "windows":
+            subprocess.Popen(["start", "microsoft.windows.camera:"], shell=True)
+        else:
+            subprocess.Popen([Path(self.camera_exe_filepath)])
 
-        # getting current camera name
-        # self.current_camera_name = self.available_cameras[i].description()
+    def open_edit_img_app(self):
+        if not self.img_edit_exe_filepath:
+            self.iface.messageBar().pushMessage(
+                "Aucun exécutable vers une application d'édition de photos n'a été renseigné",
+                level=Qgis.Critical,
+                duration=6,
+            )
+            return
+
+        if (not os.path.exists(self.img_edit_exe_filepath)) and self.img_edit_exe_filepath != "windows":
+            self.iface.messageBar().pushMessage(
+                "Le chemin de l'exécutable vers une application d'édition de photos renseigné est invalide.",
+                level=Qgis.Critical,
+                duration=6,
+            )
+            return
+
+        if not self.dlg_image.lineedit_attribut.text().strip():
+            self.iface.messageBar().pushMessage(
+                "Aucune image n'a été renseignée dans le champ ci-dessus.",
+                level=Qgis.Critical,
+                duration=6,
+            )
+            return
+
+        if not os.path.exists(self.dlg_image.lineedit_attribut.text().strip()):
+            self.iface.messageBar().pushMessage(
+                "L'image renseignée dans le champ ci-dessus n'existe pas.",
+                level=Qgis.Critical,
+                duration=6,
+            )
+            return
+
+        if self.img_edit_exe_filepath == "windows":
+            QDesktopServices.openUrl(QUrl.fromLocalFile(self.dlg_image.lineedit_attribut.text().strip()))
+        else:
+            try:
+                subprocess.Popen(
+                    [Path(self.img_edit_exe_filepath), Path(self.dlg_image.lineedit_attribut.text().strip())]
+                )
+            except Exception as e:
+                print(e)
+                self.iface.messageBar().pushMessage(
+                    "Impossible de lancer l'application d'édition choisie.",
+                    level=Qgis.Critical,
+                    duration=6,
+                )
+
+    def fill_lineedit_img_config_dlg(self):
+        # Fill line edit if paths are defined
+        if self.camera_exe_filepath:
+            if self.camera_exe_filepath == "windows":
+                self.dlg_config_img.checkbox_win_cam.setChecked(True)
+            else:
+                self.dlg_config_img.lineedit_cam_path.setText(str(self.camera_exe_filepath))
+
+        if self.img_edit_exe_filepath:
+            if self.img_edit_exe_filepath == "windows":
+                self.dlg_config_img.checkbox_win_edit_img.setChecked(True)
+            else:
+                self.dlg_config_img.lineedit_img_edit_path.setText(str(self.img_edit_exe_filepath))
+
+        if self.captured_image_dirpath:
+            self.dlg_config_img.lineedit_savedir.setText(str(self.captured_image_dirpath))
+
+    def config_image(self):
+        # Fill line edit if paths are defined
+        self.fill_lineedit_img_config_dlg()
+
+        # Show the dialog
+        self.dlg_config_img.show()
+        # Run the dialog event loop
+        result = self.dlg_config_img.exec()
+        # See if OK was pressed
+        if result:
+            self.camera_exe_filepath = (
+                "windows"
+                if self.dlg_config_img.checkbox_win_cam.isChecked()
+                else (self.dlg_config_img.lineedit_cam_path.text().strip() or None)
+            )
+
+            self.img_edit_exe_filepath = (
+                "windows"
+                if self.dlg_config_img.checkbox_win_edit_img.isChecked()
+                else (self.dlg_config_img.lineedit_img_edit_path.text().strip() or None)
+            )
+
+            self.captured_image_dirpath = (
+                self.dlg_config_img.lineedit_savedir.text().strip()
+                if self.dlg_config_img.lineedit_savedir.text().strip()
+                else None
+            )
+            self.save_image_config()
+
+        # efface le texte des lineEdit
+        self.dlg_config_img.lineedit_cam_path.clear()
+        self.dlg_config_img.lineedit_savedir.clear()
+
+    def on_checkbox_wincam_toggled(self, checked):
+        self.dlg_config_img.lineedit_cam_path.setEnabled(not checked)
+        self.dlg_config_img.pbutton_browse_cam.setEnabled(not checked)
+
+    def on_checkbox_winedit_toggled(self, checked):
+        self.dlg_config_img.lineedit_img_edit_path.setEnabled(not checked)
+        self.dlg_config_img.pbutton_browse_img_edit.setEnabled(not checked)
+
+    def read_image_config(self):
+        if self.image_config_filepath.is_file():
+            data = json.loads(self.image_config_filepath.read_text(encoding="utf-8"))
+            return data.get("camera_exe"), data.get("edit_exe"), data.get("saving_dir")
+        return None, None, None
+
+    def save_image_config(self):
+        if not self.image_config_filepath.parent.is_dir():
+            self.image_config_filepath.parent.mkdir()
+
+        data = {
+            "camera_exe": self.camera_exe_filepath,
+            "edit_exe": self.img_edit_exe_filepath,
+            "saving_dir": self.captured_image_dirpath,
+        }
+        with open(self.image_config_filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f)
 
     def clavier_num(self, lineedit):
         self.dlg_clavier_num.show()
 
-        result = self.dlg_clavier_num.exec_()
+        result = self.dlg_clavier_num.exec()
         print(lineedit.value())
         # See if OK was pressed
         if result:
@@ -2532,7 +2672,7 @@ class APNCad:
     # identify the layer of a selected object
     def set_identify_layer_tool(self):
         self.canvas.setMapTool(self.identify_tool)
-        self.canvas.setCursor(QCursor(Qt.WhatsThisCursor))
+        self.canvas.setCursor(QCursor(Qt.CursorShape.WhatsThisCursor))
 
     def identify_layer(self, point, button):
 
@@ -2545,7 +2685,7 @@ class APNCad:
 
     def set_freeze_layer_tool(self):
         self.canvas.setMapTool(self.freeze_tool)
-        self.canvas.setCursor(QCursor(Qt.PointingHandCursor))
+        self.canvas.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
     def freeze_layer(self, point, button):
         # self.save_layers()
@@ -2563,30 +2703,38 @@ class APNCad:
                 else:
                     widget.show()
 
-    # montrer cacher texte croqrem
-    def visu_text_croqrem(self):
-        self.visu_button.setDefaultAction(self.actions["action_display_croqrem"])
+    # montrer cacher info proprio
+    def visu_info_proprio(self):
+        self.visu_button.setDefaultAction(self.actions["action_display_proprio"])
         # Get layer Text in group CroqRem
         root = QgsProject.instance().layerTreeRoot()
         couche = None
-        for lay in QgsProject.instance().mapLayersByName("Textes"):
+        for lay in QgsProject.instance().mapLayersByName("Parcelles"):
             tree_layer = root.findLayer(lay.id())
+            if not tree_layer:
+                iface.messageBar().pushMessage(
+                    "Impossible de démarrer l'outil : la couche 'Parcelles' n'existe pas.",
+                    level=Qgis.Critical,
+                    duration=5,
+                )
+                return
             layer_parent = tree_layer.parent()
-            if layer_parent.name() == "CroqRem":
-                couche = tree_layer
+            if layer_parent and layer_parent.name() == "Cadastre":
+                couche = tree_layer.layer()
                 break
         if couche is None:
             iface.messageBar().pushMessage(
-                "Impossible de démarrer l'outil : le groupe 'CroqRem' ne contient pas de couche 'Textes'.",
+                "Impossible de démarrer l'outil : le groupe 'Cadastre' n'existe pas ou ne contient pas de couche "
+                "'Parcelles'.",
                 level=Qgis.Critical,
                 duration=5,
             )
             return
 
-        if couche.isVisible():
-            couche.setItemVisibilityChecked(False)
-        else:
-            couche.setItemVisibilityChecked(True)
+        couche.setLabeling(self.proprio_label)
+        currently_enabled = couche.labelsEnabled()
+        couche.setLabelsEnabled(not currently_enabled)
+        couche.triggerRepaint()
 
     # montrer cacher Ortho
     def visu_ortho(self):
@@ -2602,10 +2750,8 @@ class APNCad:
             )
             return
 
-        if group.isVisible():
-            group.setItemVisibilityChecked(False)
-        else:
-            group.setItemVisibilityChecked(True)
+        is_visible = group.isVisible()
+        group.setItemVisibilityChecked(not is_visible)
 
     def visu_ancien_plan(self):
         self.visu_button.setDefaultAction(self.actions["action_display_ancien_plan"])
@@ -2615,16 +2761,18 @@ class APNCad:
         group = root.findGroup("Ancien_Plan")
 
         if group is None:
-            return
+            iface.messageBar().pushMessage(
+                "Impossible de démarrer l'outil : le groupe 'Ancien_Plan' est introuvable.",
+                level=Qgis.Critical,
+                duration=5,
+            )
 
-        if group.isVisible():
-            group.setItemVisibilityChecked(False)
-        else:
-            group.setItemVisibilityChecked(True)
+        is_visible = group.isVisible()
+        group.setItemVisibilityChecked(not is_visible)
 
     # Rechercher parcelle
     def rechercher_parc(self):
-        layer = self._get_layer_from_group("Polygones", "Ancien_Plan")
+        layer = self.get_layer_from_group("Polygones", "Ancien_Plan")
 
         if layer is None:
             # Show message if the layer is not found in the specified group
@@ -2641,7 +2789,7 @@ class APNCad:
         self.dlg_parc.show()
         self.dlg_parc.LineEdit_section.setFocus()
 
-        result = self.dlg_parc.exec_()
+        result = self.dlg_parc.exec()
         if result:
             # Format the parcel number
             section = self.dlg_parc.LineEdit_section.value().upper()
@@ -2649,7 +2797,7 @@ class APNCad:
             num_parc = section + parcelle
 
             # Search for the parcel in the layer
-            if not self._find_and_select_parcel(layer, num_parc):
+            if not self.find_and_select_parcel(layer, num_parc):
                 iface.messageBar().pushMessage(
                     "Aucune parcelle trouvée, vérifier le numéro de section/parcelle", level=Qgis.Critical, duration=5
                 )
@@ -2659,7 +2807,7 @@ class APNCad:
         self.dlg_parc.LineEdit_parc.clearValue()
 
     # noinspection PyMethodMayBeStatic
-    def _get_layer_from_group(self, layer_name, group_name):
+    def get_layer_from_group(self, layer_name, group_name):
         """Get a layer by name from a specific group."""
         root = QgsProject.instance().layerTreeRoot()
         for layer in QgsProject.instance().mapLayersByName(layer_name):
@@ -2668,7 +2816,7 @@ class APNCad:
                 return layer
         return None
 
-    def _find_and_select_parcel(self, layer, num_parc):
+    def find_and_select_parcel(self, layer, num_parc):
         """Find and select a parcel by its number in the given layer."""
         parcelle_trouvee = False
         for feature in layer.getFeatures():
@@ -2682,46 +2830,6 @@ class APNCad:
                     layer.removeSelection()
                     parcelle_trouvee = True
         return parcelle_trouvee
-
-    # Prendre mesure laser metre
-    def mesure_laser(self):
-        self.dlg_laser.show()
-        self.dlg_laser.lineEdit_dist.setFocus()
-
-        result = self.dlg_laser.exec_()
-        if result:
-            try:
-                self.dlg_attribut.lineedit_attribut.setText(self.dlg_laser.lineEdit_dist_horiz.value())
-                self.dlg_attribut.accept()
-                self.dlg_laser.lineEdit_dist.clearValue()
-                self.dlg_laser.lineEdit_dist_horiz.clearValue()
-
-            except Exception as e:
-                print(e)
-        else:
-            self.dlg_attribut.lineedit_attribut.setFocus()
-
-    def calcul_dist_horizon(self):
-
-        # len=0 signifie clearValue
-        if len(self.dlg_laser.lineEdit_dist.value()) > 0:
-            # detection valeur entierement recue grace au $ a la fin
-            if self.dlg_laser.lineEdit_dist.value()[-1] == "$":
-                print(self.dlg_laser.lineEdit_dist.value())
-                print(self.dlg_laser.lineEdit_dist.value()[-1])
-                try:
-                    data = self.dlg_laser.lineEdit_dist.value()
-                    data = data[:-1]
-                    data = data.split(";")
-                    dist = float(data[0])
-                    angle = float(data[1])
-                    dist_horizon = round(dist * math.cos(angle * math.pi / 180), 2)
-                    self.dlg_laser.lineEdit_dist_horiz.setText(str(dist_horizon))
-                    self.dlg_laser.lineEdit_dist.selectAll()
-                except Exception as e:
-                    print(e)
-                    self.iface.messageBar().pushMessage("Mauvais format de données", level=Qgis.Critical, duration=3)
-                    self.dlg_laser.lineEdit_dist.selectAll()
 
     # Compute the highest point attribute
     def max_point(self):
@@ -2746,8 +2854,9 @@ class APNCad:
         # sauvegarde toutes les couches en mode edition
         for layer in self.iface.mapCanvas().layers():
             if layer.isEditable():
-                layer.commitChanges(False)
-                # layer.startEditing()  # on remet la couche en mode edition
+                # layer.commitChanges()
+                layer.commitChanges()
+                layer.startEditing()  # on remet la couche en mode edition
 
     def find_nearest_features(self, point, button):
         # Use only the 'point' parameter and ignore 'button'
@@ -2755,8 +2864,8 @@ class APNCad:
         self.closest_feature_id = None
 
         # Process each vector layer and collect features within distance
-        for layer in self._get_valid_layers():
-            for feature_info in self._get_features_near_point(layer, point):
+        for layer in self.get_valid_layers():
+            for feature_info in self.get_features_near_point(layer, point):
                 self.layer_data.append(feature_info)
 
         if not self.layer_data:
@@ -2768,15 +2877,15 @@ class APNCad:
         self.layer_data.sort(key=lambda x: x[2])
 
         if len(self.layer_data) > 1:
-            self._populate_table()
-            if not self.dlg_near.exec_():
+            self.populate_table()
+            if not self.dlg_near.exec():
                 return False
         else:
             self.current_layer, self.closest_feature_id, _ = self.layer_data[0]
 
         return True
 
-    def _belongs_to_plugin_group(self, layer):
+    def belongs_to_plugin_group(self, layer):
         """
         Returns True is layer belongs to theparent group of the plugin layers.
         If the layer is not inside any group (i.e., it's at the root), return False.
@@ -2800,20 +2909,20 @@ class APNCad:
 
         return parent.name() == self.parent_group_name
 
-    def _get_valid_layers(self):
+    def get_valid_layers(self):
         """Return a list of valid vector layers excluding specific group names."""
         valid_layers = []
         for layer in self.canvas.layers():
             if (
                 layer.type() == QgsMapLayer.VectorLayer
                 and layer.featureCount() > 0
-                and self._belongs_to_plugin_group(layer)
+                and self.belongs_to_plugin_group(layer)
             ):
                 valid_layers.append(layer)
         return valid_layers
 
     # noinspection PyMethodMayBeStatic
-    def _get_features_near_point(self, layer, point):
+    def get_features_near_point(self, layer, point):
         """Return a list of features close to a given point within a layer."""
         features_near_point = []
         for feature in layer.getFeatures():
@@ -2822,16 +2931,16 @@ class APNCad:
                 features_near_point.append((layer, feature.id(), dist))
         return features_near_point
 
-    def _populate_table(self):
+    def populate_table(self):
         """Populate the closest features table."""
         self.dlg_near.tableWidget_closest.setRowCount(0)
         for i, (layer, layer_id, dist) in enumerate(self.layer_data):
             self.dlg_near.tableWidget_closest.insertRow(i)
-            self._set_table_row(i, layer, layer_id, dist)
+            self.set_table_row(i, layer, layer_id, dist)
 
         self.dlg_near.show()
 
-    def _set_table_row(self, row, layer, layer_id, dist):
+    def set_table_row(self, row, layer, layer_id, dist):
         """Set table row values for closest feature info."""
         line_id = QLineEdit(str(layer_id))
         line_layer = QLineEdit(layer.name())

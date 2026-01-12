@@ -1,6 +1,5 @@
-from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtGui import QColor
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import pyqtSignal, Qt
+from qgis.PyQt.QtGui import QColor
 from qgis.core import (
     QgsFeature,
     QgsGeometry,
@@ -22,7 +21,7 @@ class PolylineMapTool(QgsMapTool):
         self.points = []
         self.rb = QgsRubberBand(canvas, QgsWkbTypes.LineGeometry)
         self.rb.setColor(QColor(255, 0, 0))
-        self.rb.setLineStyle(Qt.DotLine)
+        self.rb.setLineStyle(Qt.PenStyle.DotLine)
         self.rb.setWidth(1)
         self.snapIndicator = QgsSnapIndicator(canvas)
         self.snapper = canvas.snappingUtils()
@@ -30,7 +29,7 @@ class PolylineMapTool(QgsMapTool):
 
     def canvasPressEvent(self, e):
         current_point = self.toMapCoordinates(e.pos())
-        if e.button() == Qt.LeftButton:
+        if e.button() == Qt.MouseButton.LeftButton:
             # Try to snap to an existing vertex
             snap_match = self.snapper.snapToMap(e.pos())
             self.snapIndicator.setMatch(snap_match)
@@ -43,11 +42,11 @@ class PolylineMapTool(QgsMapTool):
                 self.finish_polyline()
 
     def canvasReleaseEvent(self, e):
-        if e.button() == Qt.RightButton:
+        if e.button() == Qt.MouseButton.RightButton:
             self.finish_polyline()
 
     def keyPressEvent(self, e):
-        if e.key() == Qt.Key_Escape:
+        if e.key() == Qt.Key.Key_Escape:
             self.points = []
             self.rb.reset(QgsWkbTypes.LineGeometry)
 

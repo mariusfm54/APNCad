@@ -4,6 +4,10 @@ name=APNCad
 
 qgisMinimumVersion=3.0
 
+qgisMaximumVersion=4.99
+
+supportsQt6=True
+
 description=Applicatif destiné à la prise de notes sur tablette numérique lors des opérations de terrain réalisées pendant le remaniement cadastral. APNCad est le fruit de la collaboration entre Jean-Noël MARCHAL de la BNIC de Nancy et Marius FRANÇOIS-MARCHAL.
 
 about=Applicatif destiné à la prise de notes sur tablette numérique lors des opérations de terrain réalisées pendant le remaniement cadastral. APNCad est le fruit de la collaboration entre Jean-Noël MARCHAL de la BNIC de Nancy et Marius FRANÇOIS-MARCHAL.
@@ -11,8 +15,20 @@ about=Applicatif destiné à la prise de notes sur tablette numérique lors des 
 author=marius54
 email=m.francois.marchal@gmail.com
 
-version=2.2.5
+version=3.0.0
 changelog=
+ Version 3.0.0 :
+  * Compatibilité QT5 et QT6 assurant la compatibilité avec les dernières versions de QGIS.
+  * Suppression de la caméra homemade, ajout d'options pour configurer l'outil Image à la place.
+  * Suppression de l'option de prise de mesure au lasermètre.
+  * Ajout d'un bouton pour afficher / masquer les infos des propriétaires à la place de la couche texte de CroqRem.
+
+
+ Version 2.2.5 :
+  * Correction bug qui permettait de supprimer des couches hors groupe Cad_Dessin (non générées par apncad)
+
+ Version 2.2.4 :
+  * Première version publiée.
 
 
 # Tags are comma separated with spaces allowed
